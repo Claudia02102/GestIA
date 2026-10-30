@@ -8,5 +8,20 @@
     "max_result_age_ms": 750
   },
   "tracking": {"stable_detection_ms": 300},
-  "metrics": {"path": "data/metrics.jsonl"}
+  "metrics": {"path": "data/metrics.jsonl"},
+  "calibration": {
+    "settle_ms": 1200,
+    "neutral_hold_ms": 1500,
+    "pose_hold_ms": 1000,
+    "gesture_hold_ms": 700,
+    "step_timeout_ms": 12000,
+    "verify_timeout_ms": 30000,
+    "min_head_delta": 0.04,
+    "stable_tolerance": 0.02,
+    "reach": 0.8,
+    "max_gesture_attempts": 3,
+    "recenter_hold_ms": 800,
+    "recenter_timeout_ms": 4500
+  },
+  "profiles": {"directory": "data/profiles"}
 }

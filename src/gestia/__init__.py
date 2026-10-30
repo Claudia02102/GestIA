@@ -1,3 +1,3 @@
-"""GestIA: seguimiento facial local del Sprint 1."""
+"""GestIA: seguimiento facial, calibración y perfiles locales."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

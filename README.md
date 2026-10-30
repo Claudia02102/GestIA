@@ -1,9 +1,23 @@
-# GestIA — Sprint 1
+# GestIA — Sprint 2
 
 Aplicación de escritorio local que muestra la webcam, detecta **un rostro** con MediaPipe
-Tasks Face Landmarker, dibuja sus puntos y gestiona pérdida y recuperación. Este sprint no
-identifica personas, no controla la computadora y no incluye el catálogo de comandos de la
-maqueta. Su utilidad de accesibilidad debe evaluarse con usuarios; no es un resultado demostrado.
+Tasks Face Landmarker, dibuja sus puntos y gestiona pérdida y recuperación (Sprint 1, Épica E1).
+
+El Sprint 2 (Épica E2, «Calibración y perfiles») añade:
+
+| Historia | Qué incluye |
+|---|---|
+| HU-06 Asistente de calibración | Asistente a pantalla completa que avanza solo con gestos: reposo, rango de cabeza (izquierda, derecha, arriba, abajo), gestos activos y verificación de las cuatro esquinas con un puntero virtual. Pide repetir un paso mal hecho. |
+| HU-07 Selección de gestos | Activar o desactivar cada gesto; los desactivados no se reconocen ni aparecen en el mapeo. Debe quedar al menos un gesto de selección. |
+| HU-08 Sensibilidad | Sensibilidad (1–10) y tiempo de sostenimiento por gesto, aplicados en vivo sin reiniciar. |
+| HU-09 Guardado de perfil | La calibración y los ajustes se guardan en JSON local y se cargan al reabrir. |
+| HU-10 Recalibración rápida | Gesto «Levantar las cejas» (o botón **Recentrar**): toma la postura actual como nuevo centro sin cambiar el resto del perfil. |
+| HU-11 Múltiples perfiles | Crear, cambiar y eliminar (con confirmación) perfiles en el mismo equipo. |
+
+Todavía **no** se controla el cursor ni se hacen clics reales: eso es la Épica E3. Los gestos
+reconocidos se muestran en la pestaña *Eventos* como acciones simuladas y el puntero se ve en
+una pantalla en miniatura. La utilidad de accesibilidad debe evaluarse con usuarios; no es un
+resultado demostrado.
 
 ## Requisitos
 
@@ -52,10 +66,48 @@ Tras el periodo estable muestra «Rostro detectado». Al salir del encuadre reti
 muestra pérdida; al volver recupera el seguimiento sin reiniciar. **Detener** libera la cámara
 y permite iniciar de nuevo.
 
+### Flujo del Sprint 2
+
+1. La primera vez se crea el perfil «Perfil 1». Al detectarse el rostro, si el perfil no está
+   calibrado, el **asistente de calibración** se abre solo a pantalla completa.
+2. Cada paso avanza al **mantener** la posición indicada (barra de progreso y pitido al
+   completarlo). No hace falta teclado ni ratón; el botón *Cancelar* es para quien asiste.
+   - Si el movimiento es insuficiente, va hacia el lado equivocado o no se sostiene, el paso
+     se repite. Un gesto que no se logra en 3 intentos se omite y queda desactivado.
+   - En la verificación final hay que llevar el puntero virtual a las cuatro esquinas. Si no
+     se logra en 30 s, se repite solo el rango de cabeza.
+3. En la pestaña **Gestos** puede activar/desactivar gestos, cambiar sensibilidad y tiempo de
+   sostenimiento; la barra muestra en vivo la intensidad del gesto. **Mapeo** lista los gestos
+   activos con su acción y **Eventos** registra los gestos reconocidos.
+4. Si cambia de postura, levante las cejas (≈1 s) o pulse **Recentrar** y quédese quieto: el
+   centro se actualiza en ~1 s (límite 4,5 s).
+5. **Nuevo perfil**, el selector y **Eliminar perfil** gestionan varias personas usuarias.
+   **Calibrar** repite el asistente completo para el perfil activo.
+
+Gestos y acción asignada por defecto (la reasignación es la Épica E5):
+
+| Gesto | Acción | Activo por defecto |
+|---|---|---|
+| Abrir la boca | Clic izquierdo | Sí |
+| Sonreír | Clic derecho | Sí |
+| Cerrar ambos ojos (≥ 800 ms) | Pausar / reanudar | Sí |
+| Levantar las cejas (≥ 1 s) | Recalibrar (recentrar) | Sí |
+| Guiño izquierdo | Doble clic | No |
+| Guiño derecho | Arrastrar y soltar | No |
+
 ## Configuración y datos
 
 `config.json` permite cambiar índice, resolución, FPS solicitados, periodo estable, antigüedad
-máxima de resultados y los tres umbrales `[0,1]` de Face Landmarker.
+máxima de resultados y los tres umbrales `[0,1]` de Face Landmarker. La sección `calibration`
+ajusta los tiempos del asistente (sostenimiento, tiempo límite por paso, verificación), el
+desplazamiento mínimo de cabeza, la tolerancia de quietud, el alcance (`reach`: fracción del
+rango cómodo que ya lleva el puntero al borde) y el recentrado. `profiles.directory` indica
+dónde se guardan los perfiles (`data/profiles` por defecto).
+
+Cada perfil es un JSON en `data/profiles/<id>.json` con los gestos activos, la sensibilidad,
+el mapeo y la calibración. La calibración son solo **razones geométricas escalares** (por
+ejemplo, la apertura de la boca en reposo y en el gesto pleno), no imágenes ni landmarks.
+`data/profiles/index.json` recuerda el último perfil usado.
 
 Las métricas y datos técnicos del entorno (SO, arquitectura, CPU lógica, RAM, Python y sesión
 gráfica) se guardan como JSONL en `data/metrics.jsonl`. No se guardan fotografías, video,
@@ -71,7 +123,9 @@ pytest
 La [matriz manual](docs/MATRIZ_PRUEBAS_WEBCAM.md) explica cómo probar luz frontal, luz tenue,
 contraluz, lentes transparentes, pérdida, desconexión y reinicio. Debe llenarse con resultados
 reales: las pruebas simuladas no demuestran FPS ni robustez física. Consulte también el
-[informe](docs/INFORME_SPRINT_1.md).
+[informe del Sprint 1](docs/INFORME_SPRINT_1.md), el
+[informe del Sprint 2](docs/INFORME_SPRINT_2.md) y la
+[matriz de aceptación del Sprint 2](docs/MATRIZ_PRUEBAS_SPRINT_2.md).
 
 ## Problemas frecuentes
 
@@ -97,6 +151,18 @@ reales: las pruebas simuladas no demuestran FPS ni robustez física. Consulte ta
 - `worker.py`: orquestación fuera del hilo principal.
 - `ui.py`: visualización Qt Widgets.
 - `persistence.py`: métricas técnicas locales.
+- `features.py`: medidas faciales (giro, inclinación, ojos, boca, cejas, sonrisa) a partir de
+  los landmarks.
+- `gestures.py`: catálogo de gestos, acciones y motor de reconocimiento (umbral por
+  sensibilidad, sostenimiento, histéresis).
+- `calibration.py`: asistente de calibración, mapeo cabeza → puntero y recentrado (lógica pura).
+- `profiles.py`: perfiles JSON y su almacén.
+- `ui_calibration.py`, `ui_profile.py`, `ui_widgets.py`: asistente, panel de gestos y
+  puntero virtual.
+
+Flujo de datos: `capture` → `vision` (landmarks) → `tracking` (estado) → `features` →
+`gestures` (en el hilo del worker) → `DisplayPacket` → `ui` (vista, asistente, recentrado,
+perfil).
 
 Calibración, gestos, comandos y adaptador del SO se incorporarán cuando tengan comportamiento
 real, sin crear módulos vacíos. No se crea ni publica ningún repositorio remoto en este sprint.

@@ -9,3 +9,4 @@ models/*.task
 data/*.jsonl
 config.json
 *.egg-info/
+data/profiles/

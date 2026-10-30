@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
+
+from gestia.features import FaceFeatures
+from gestia.gestures import GestureFrame
 
 
 class TrackingState(StrEnum):
@@ -38,3 +41,5 @@ class DisplayPacket:
     result: FaceResult
     state: TrackingState
     performance: PerformanceSnapshot
+    features: FaceFeatures | None = None
+    gestures: GestureFrame = field(default_factory=GestureFrame)

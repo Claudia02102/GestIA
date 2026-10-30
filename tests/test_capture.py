@@ -1,4 +1,4 @@
-from gestia.capture import CameraError, CaptureProducer, CapturedFrame, LatestFrameBuffer
+from gestia.capture import CameraError, CapturedFrame, CaptureProducer, LatestFrameBuffer
 
 
 class FailingCamera:
