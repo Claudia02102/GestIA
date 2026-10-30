@@ -1,0 +1,12 @@
+{
+  "camera": {"index": 0, "width": 640, "height": 480, "fps": 30, "candidate_indices": [0, 1, 2, 3]},
+  "vision": {
+    "model_path": "models/face_landmarker.task",
+    "min_face_detection_confidence": 0.5,
+    "min_face_presence_confidence": 0.5,
+    "min_tracking_confidence": 0.5,
+    "max_result_age_ms": 750
+  },
+  "tracking": {"stable_detection_ms": 300},
+  "metrics": {"path": "data/metrics.jsonl"}
+}
