@@ -27,9 +27,10 @@ from gestia.gestures import (
     default_gesture_settings,
     selection_gestures,
 )
+from gestia.keyboard import KeyboardSettings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 INDEX_FILE = "index.json"
 
 
@@ -45,6 +46,7 @@ class Profile:
     actions: dict[GestureId, Action] = field(default_factory=lambda: dict(DEFAULT_ACTIONS))
     calibration: Calibration | None = None
     pointer: PointerSettings = field(default_factory=PointerSettings)
+    keyboard: KeyboardSettings = field(default_factory=KeyboardSettings)
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
 
@@ -76,6 +78,7 @@ class Profile:
             "actions": {str(gesture): str(action) for gesture, action in self.actions.items()},
             "calibration": None if self.calibration is None else self.calibration.to_dict(),
             "pointer": asdict(self.pointer),
+            "keyboard": self.keyboard.to_dict(),
         }
 
     @classmethod
@@ -99,6 +102,8 @@ class Profile:
             # Los perfiles del Sprint 2 no tienen esta sección: se usan los valores por defecto.
             pointer = PointerSettings(**raw.get("pointer", {}))
             pointer.validate()
+            # Los perfiles anteriores al Sprint 4 no tienen esta sección.
+            keyboard = KeyboardSettings.from_dict(raw.get("keyboard", {}))
             return cls(
                 id=str(raw["id"]),
                 name=str(raw["name"]),
@@ -106,6 +111,7 @@ class Profile:
                 actions=actions,
                 calibration=None if calibration is None else Calibration.from_dict(calibration),
                 pointer=pointer,
+                keyboard=keyboard,
                 created_at=str(raw.get("created_at", _now())),
                 updated_at=str(raw.get("updated_at", _now())),
             )

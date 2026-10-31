@@ -31,9 +31,11 @@ from gestia.control import (
 )
 from gestia.domain import DisplayPacket, TrackingState
 from gestia.gestures import GESTURES, Action
+from gestia.keyboard import PynputKeyboardBackend
 from gestia.persistence import MetricsWriter
 from gestia.profiles import Profile, ProfileStore
 from gestia.ui_calibration import CalibrationDialog
+from gestia.ui_keyboard import KeyboardWindow
 from gestia.ui_profile import GesturePanel
 from gestia.ui_widgets import PointerPreview
 from gestia.worker import PipelineWorker
@@ -99,6 +101,7 @@ class MainWindow(QMainWindow):
         self.wizard_offered = False
         self.recenterer: Recenterer | None = None
         self.controller: PointerController | None = None
+        self.keyboard: KeyboardWindow | None = None
         self.hotkeys = HotkeyBridge()
         self.hotkeys.triggered.connect(self.toggle_pause)
         self.setWindowTitle("GestIA — seguimiento facial")
@@ -162,11 +165,18 @@ class MainWindow(QMainWindow):
         self.pause_button.setEnabled(False)
         self.pause_button.setMinimumWidth(150)
         self.pause_button.clicked.connect(self.toggle_pause)
+        self.keyboard_button = QPushButton("Mostrar teclado")
+        self.keyboard_button.setCheckable(True)
+        self.keyboard_button.setMinimumWidth(150)
+        self.keyboard_button.toggled.connect(self._keyboard_toggled)
         self.mode_label = QLabel()
         hotkey = "Ctrl+Alt+P pausa o reanuda desde cualquier aplicación."
         hotkey_label = QLabel(hotkey if self.hotkeys.active else "")
         hotkey_label.setStyleSheet("color: #64748b;")
-        for widget in (self.control_check, self.pause_button, self.mode_label, hotkey_label):
+        for widget in (
+            self.control_check, self.pause_button, self.keyboard_button, self.mode_label,
+            hotkey_label,
+        ):
             control_bar.addWidget(widget)
         control_bar.addStretch()
         layout.addLayout(control_bar)
@@ -232,6 +242,8 @@ class MainWindow(QMainWindow):
         self.pointer.set_pointer(None)
         self._update_profile_status()
         self._apply_pointer_settings()
+        if self.keyboard is not None:
+            self.keyboard.set_settings(profile.keyboard)
         if self.worker is not None:
             self.worker.apply_profile(profile)
 
@@ -303,6 +315,38 @@ class MainWindow(QMainWindow):
     @Slot()
     def _profile_changed(self) -> None:
         self._save_profile()
+        if self.keyboard is not None:
+            self.keyboard.set_settings(self.profile.keyboard)
+
+    # --- Teclado virtual (Épica E4) -------------------------------------------------------
+
+    @Slot(bool)
+    def _keyboard_toggled(self, show: bool) -> None:
+        if not show:
+            if self.keyboard is not None:
+                self.keyboard.hide()
+            self.keyboard_button.setText("Mostrar teclado")
+            return
+        if self.keyboard is None:
+            try:
+                backend = PynputKeyboardBackend()
+            except Exception as exc:  # noqa: BLE001 - p. ej. sin servidor gráfico
+                QMessageBox.warning(self, "Teclado", f"No se puede escribir en el sistema: {exc}")
+                self.keyboard_button.setChecked(False)
+                return
+            self.keyboard = KeyboardWindow(self.profile.keyboard, backend)
+            self.keyboard.learned.connect(self._word_learned)
+            self.keyboard.closed.connect(lambda: self.keyboard_button.setChecked(False))
+        self.keyboard.show()
+        self.keyboard_button.setText("Ocultar teclado")
+
+    @Slot(str)
+    def _word_learned(self, _word: str) -> None:
+        try:
+            self.store.save(self.profile)
+        except OSError as exc:
+            LOGGER.warning("No se pudo guardar el vocabulario: %s", exc)
+        self.panel.refresh_keyboard()
 
     @Slot(int)
     def _profile_selected(self, row: int) -> None:
@@ -366,6 +410,8 @@ class MainWindow(QMainWindow):
             return
         self.wizard_offered = True
         self.recenterer = None
+        # El teclado queda siempre encima: se oculta para no tapar el asistente.
+        self.keyboard_button.setChecked(False)
         gestures = [g for g in GESTURES if self.profile.gestures[g].enabled]
         self.wizard = CalibrationDialog(gestures, self.config.calibration, self)
         self.wizard.completed.connect(self._calibration_completed)
@@ -588,4 +634,6 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self.hotkeys.stop()
+        if self.keyboard is not None:
+            self.keyboard.close()
         event.accept()

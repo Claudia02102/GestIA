@@ -1,4 +1,4 @@
-"""Panel de gestos del perfil: selección (HU-07), sensibilidad (HU-08), mapeo y eventos."""
+"""Panel del perfil: gestos (HU-07, HU-08), puntero, teclado (HU-22, HU-23), mapeo y eventos."""
 
 from __future__ import annotations
 
@@ -7,12 +7,16 @@ import time
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFormLayout,
     QGridLayout,
+    QHBoxLayout,
+    QInputDialog,
     QLabel,
     QListWidget,
     QMessageBox,
     QProgressBar,
+    QPushButton,
     QSlider,
     QSpinBox,
     QTabWidget,
@@ -28,6 +32,14 @@ from gestia.gestures import (
     GestureEvent,
     GestureFrame,
     GestureId,
+)
+from gestia.keyboard import (
+    LAYOUT_TEXT,
+    MAX_KEY_SIZE,
+    MAX_PHRASE_LENGTH,
+    MAX_PHRASES,
+    MIN_KEY_SIZE,
+    Layout,
 )
 from gestia.profiles import Profile
 
@@ -100,6 +112,7 @@ class GesturePanel(QTabWidget):
         self.addTab(mapping_page, "Mapeo")
 
         self.addTab(self._build_pointer_page(), "Puntero")
+        self.addTab(self._build_keyboard_page(), "Teclado")
 
         self.events = QListWidget()
         self.addTab(self.events, "Eventos")
@@ -150,6 +163,143 @@ class GesturePanel(QTabWidget):
         self.dwell.toggled.connect(self._pointer_changed)
         return page
 
+    def _build_keyboard_page(self) -> QWidget:
+        page = QWidget()
+        form = QFormLayout(page)
+        self.layout_selector = QComboBox()
+        for layout in Layout:
+            self.layout_selector.addItem(LAYOUT_TEXT[layout], str(layout))
+        self.layout_selector.currentIndexChanged.connect(self._keyboard_changed)
+        self.key_size = QSpinBox()
+        self.key_size.setRange(MIN_KEY_SIZE, MAX_KEY_SIZE)
+        self.key_size.setSingleStep(4)
+        self.key_size.setSuffix(" px")
+        self.key_size.valueChanged.connect(self._keyboard_changed)
+        form.addRow("Distribución:", self.layout_selector)
+        form.addRow("Tamaño de tecla:", self.key_size)
+
+        self.phrases = QListWidget()
+        self.phrases.setMaximumHeight(150)
+        buttons = QHBoxLayout()
+        for text, slot in (
+            ("Añadir", self._add_phrase),
+            ("Editar", self._edit_phrase),
+            ("Eliminar", self._delete_phrase),
+            ("Subir", self._raise_phrase),
+        ):
+            button = QPushButton(text)
+            button.clicked.connect(slot)
+            buttons.addWidget(button)
+        form.addRow(QLabel("Frases frecuentes (botón «Frases» del teclado):"))
+        form.addRow(self.phrases)
+        form.addRow(buttons)
+
+        self.vocabulary_label = QLabel()
+        forget = QPushButton("Olvidar palabras aprendidas")
+        forget.clicked.connect(self._forget_words)
+        form.addRow(self.vocabulary_label, forget)
+        note = QLabel(
+            "Si el tamaño no cabe en la pantalla, el teclado usa el mayor que cabe. Las "
+            "sugerencias vienen de un diccionario local en español y de las palabras que "
+            "escribe con el teclado (una palabra nueva se sugiere desde la segunda vez). "
+            "Solo se guardan palabras sueltas y su conteo en el perfil."
+        )
+        note.setWordWrap(True)
+        form.addRow(note)
+        return page
+
+    def _keyboard_changed(self) -> None:
+        if self._loading or self.profile is None:
+            return
+        keyboard = self.profile.keyboard
+        keyboard.layout = Layout(self.layout_selector.currentData())
+        keyboard.key_size = self.key_size.value()
+        self.changed.emit()
+
+    def _load_keyboard(self) -> None:
+        assert self.profile is not None
+        keyboard = self.profile.keyboard
+        self.layout_selector.setCurrentIndex(self.layout_selector.findData(str(keyboard.layout)))
+        self.key_size.setValue(keyboard.key_size)
+        self.refresh_keyboard()
+
+    def refresh_keyboard(self) -> None:
+        """Lista de frases y conteo de palabras aprendidas."""
+        if self.profile is None:
+            return
+        keyboard = self.profile.keyboard
+        row = self.phrases.currentRow()
+        self.phrases.clear()
+        self.phrases.addItems(keyboard.phrases)
+        self.phrases.setCurrentRow(min(row, self.phrases.count() - 1))
+        self.vocabulary_label.setText(f"Palabras aprendidas: {len(keyboard.vocabulary)}")
+
+    def _ask_phrase(self, title: str, text: str = "") -> str | None:
+        value, ok = QInputDialog.getText(self, title, "Frase:", text=text)
+        value = value.strip()
+        if not ok or not value:
+            return None
+        if len(value) > MAX_PHRASE_LENGTH:
+            QMessageBox.warning(self, title, f"Máximo {MAX_PHRASE_LENGTH} caracteres.")
+            return None
+        return value
+
+    def _phrases_changed(self) -> None:
+        self.refresh_keyboard()
+        self.changed.emit()
+
+    def _add_phrase(self) -> None:
+        if self.profile is None:
+            return
+        if len(self.profile.keyboard.phrases) >= MAX_PHRASES:
+            QMessageBox.warning(self, "Frases", f"Se admiten hasta {MAX_PHRASES} frases.")
+            return
+        value = self._ask_phrase("Nueva frase")
+        if value is not None:
+            self.profile.keyboard.phrases.append(value)
+            self.phrases.setCurrentRow(-1)
+            self._phrases_changed()
+            self.phrases.setCurrentRow(self.phrases.count() - 1)
+
+    def _edit_phrase(self) -> None:
+        row = self.phrases.currentRow()
+        if self.profile is None or row < 0:
+            return
+        value = self._ask_phrase("Editar frase", self.profile.keyboard.phrases[row])
+        if value is not None:
+            self.profile.keyboard.phrases[row] = value
+            self._phrases_changed()
+
+    def _delete_phrase(self) -> None:
+        row = self.phrases.currentRow()
+        if self.profile is None or row < 0:
+            return
+        del self.profile.keyboard.phrases[row]
+        self._phrases_changed()
+
+    def _raise_phrase(self) -> None:
+        row = self.phrases.currentRow()
+        if self.profile is None or row < 1:
+            return
+        phrases = self.profile.keyboard.phrases
+        phrases[row - 1], phrases[row] = phrases[row], phrases[row - 1]
+        self.phrases.setCurrentRow(row - 1)
+        self._phrases_changed()
+
+    def _forget_words(self) -> None:
+        if self.profile is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            "Palabras aprendidas",
+            "¿Olvidar todas las palabras aprendidas de este perfil?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self.profile.keyboard.vocabulary.clear()
+            self._phrases_changed()
+
     def _pointer_labels(self) -> None:
         self.speed_label.setText(f"× {self.speed.value() / 10:.1f}")
         level = self.smoothing.value()
@@ -189,6 +339,7 @@ class GesturePanel(QTabWidget):
             self.dwell_radius.setValue(pointer.dwell_radius_px)
             self.scroll_speed.setValue(pointer.scroll_speed)
             self._pointer_labels()
+            self._load_keyboard()
         finally:
             self._loading = False
         self.refresh()

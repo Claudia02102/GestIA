@@ -87,7 +87,7 @@ def test_profile_file_contains_no_images_or_landmarks(tmp_path) -> None:
     raw = json.loads((tmp_path / f"{profile.id}.json").read_text(encoding="utf-8"))
     assert set(raw) == {
         "schema_version", "id", "name", "created_at", "updated_at", "gestures", "actions",
-        "calibration", "pointer",
+        "calibration", "pointer", "keyboard",
     }
     assert "landmarks" not in json.dumps(raw)
 
@@ -114,3 +114,30 @@ def test_pointer_settings_round_trip_and_validation(tmp_path) -> None:
     raw["pointer"]["speed"] = 9
     with pytest.raises(ValueError):
         Profile.from_dict(raw)
+
+
+def test_keyboard_settings_survive_restart(tmp_path) -> None:
+    from gestia.keyboard import Layout
+
+    store = ProfileStore(tmp_path)
+    profile = store.load_active()
+    profile.keyboard.layout = Layout.ABC
+    profile.keyboard.key_size = 80
+    profile.keyboard.phrases.append("Llama a mi hermana")
+    profile.keyboard.vocabulary["gestia"] = 2
+    store.save(profile)
+    reopened = ProfileStore(tmp_path).load_active()
+    assert reopened.keyboard == profile.keyboard
+
+
+def test_sprint3_profile_loads_with_default_keyboard(tmp_path) -> None:
+    from gestia.keyboard import DEFAULT_PHRASES, Layout
+
+    store = ProfileStore(tmp_path)
+    raw = store.load_active().to_dict()
+    del raw["keyboard"]
+    raw["schema_version"] = 2
+    (tmp_path / f"{raw['id']}.json").write_text(json.dumps(raw), encoding="utf-8")
+    profile = ProfileStore(tmp_path).load_active()
+    assert profile.keyboard.layout is Layout.QWERTY
+    assert profile.keyboard.phrases == list(DEFAULT_PHRASES)
