@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Qt, Slot
+from PySide6.QtCore import Qt, QThread, Slot
 from PySide6.QtGui import QCloseEvent, QImage, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMainWindow,
     QMessageBox,
@@ -16,9 +17,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gestia.calibration import Calibration, Recenterer, RecenterStatus
 from gestia.config import AppConfig, resolve_from_project
 from gestia.domain import DisplayPacket, TrackingState
+from gestia.gestures import GESTURES, Action
 from gestia.persistence import MetricsWriter
+from gestia.profiles import Profile, ProfileStore
+from gestia.ui_calibration import CalibrationDialog
+from gestia.ui_profile import GesturePanel
+from gestia.ui_widgets import PointerPreview
 from gestia.worker import PipelineWorker
 
 STATE_TEXT = {
@@ -37,9 +44,15 @@ class MainWindow(QMainWindow):
         self.worker: PipelineWorker | None = None
         self.thread: QThread | None = None
         self.metrics = MetricsWriter(resolve_from_project(config.metrics.path, project_root))
+        self.store = ProfileStore(resolve_from_project(config.profiles.directory, project_root))
+        self.profile: Profile = self.store.load_active()
+        self.wizard: CalibrationDialog | None = None
+        self.wizard_offered = False
+        self.recenterer: Recenterer | None = None
         self.setWindowTitle("GestIA — seguimiento facial")
-        self.resize(900, 700)
+        self.resize(1280, 760)
         self._build_ui()
+        self._load_profiles()
         self._set_state(TrackingState.STOPPED)
 
     def _build_ui(self) -> None:
@@ -67,15 +80,45 @@ class MainWindow(QMainWindow):
         controls.addStretch()
         layout.addLayout(controls)
 
+        profile_bar = QHBoxLayout()
+        self.profile_selector = QComboBox()
+        self.profile_selector.setMinimumWidth(180)
+        self.profile_selector.activated.connect(self._profile_selected)
+        new_profile = QPushButton("Nuevo perfil")
+        new_profile.clicked.connect(self.create_profile)
+        self.delete_button = QPushButton("Eliminar perfil")
+        self.delete_button.clicked.connect(self.delete_profile)
+        self.calibrate_button = QPushButton("Calibrar")
+        self.calibrate_button.setEnabled(False)
+        self.calibrate_button.clicked.connect(self.open_calibration)
+        self.recenter_button = QPushButton("Recentrar")
+        self.recenter_button.setEnabled(False)
+        self.recenter_button.clicked.connect(self.start_recenter)
+        self.profile_status = QLabel()
+        for widget in (
+            QLabel("Perfil:"), self.profile_selector, new_profile, self.delete_button,
+            self.calibrate_button, self.recenter_button, self.profile_status,
+        ):
+            profile_bar.addWidget(widget)
+        profile_bar.addStretch()
+        layout.addLayout(profile_bar)
+
+        body = QHBoxLayout()
+        left = QVBoxLayout()
+        right = QVBoxLayout()
+        body.addLayout(left, 3)
+        body.addLayout(right, 2)
+        layout.addLayout(body, 1)
+
         self.preview = QLabel("Presione Iniciar para abrir la cámara")
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview.setMinimumSize(640, 480)
         self.preview.setStyleSheet(
             "background: #17191c; color: #cbd5e1; border-radius: 8px;"
         )
-        layout.addWidget(self.preview, 1)
+        left.addWidget(self.preview, 1)
         self.state_label = QLabel()
-        layout.addWidget(self.state_label)
+        left.addWidget(self.state_label)
 
         metrics = QFormLayout()
         self.capture_fps = QLabel("—")
@@ -86,14 +129,185 @@ class MainWindow(QMainWindow):
         metrics.addRow("FPS de resultados:", self.result_fps)
         metrics.addRow("Duración de inferencia:", self.inference)
         metrics.addRow("Frames reemplazados / resultados obsoletos:", self.dropped)
-        layout.addLayout(metrics)
+        left.addLayout(metrics)
         guidance = QLabel(
             "Mantenga el rostro visible y con iluminación frontal. Las imágenes se "
             "procesan localmente y no se guardan."
         )
         guidance.setWordWrap(True)
-        layout.addWidget(guidance)
+        left.addWidget(guidance)
+
+        right.addWidget(QLabel("Puntero virtual (vista previa; aún no mueve el cursor):"))
+        self.pointer = PointerPreview()
+        self.pointer.setMinimumHeight(170)
+        right.addWidget(self.pointer)
+        self.panel = GesturePanel()
+        self.panel.changed.connect(self._profile_changed)
+        right.addWidget(self.panel, 1)
         self.setCentralWidget(central)
+
+    # --- Perfiles -------------------------------------------------------------------------
+
+    def _load_profiles(self) -> None:
+        self.profile_selector.clear()
+        for profile in self.store.list():
+            self.profile_selector.addItem(profile.name, profile.id)
+        if self.profile_selector.findData(self.profile.id) < 0:
+            self.profile_selector.addItem(self.profile.name, self.profile.id)
+        self.profile_selector.setCurrentIndex(self.profile_selector.findData(self.profile.id))
+        self._activate_profile(self.profile)
+
+    def _activate_profile(self, profile: Profile) -> None:
+        self.profile = profile
+        self.recenterer = None
+        self.panel.set_profile(profile)
+        self.pointer.set_pointer(None)
+        self._update_profile_status()
+        if self.worker is not None:
+            self.worker.apply_profile(profile)
+
+    def _update_profile_status(self) -> None:
+        if self.profile.calibration is None:
+            text, color = "Sin calibrar", "#ca8a04"
+        else:
+            text, color = "Calibrado", "#16a34a"
+        self.profile_status.setText(text)
+        self.profile_status.setStyleSheet(f"font-weight: 600; color: {color};")
+
+    def _save_profile(self) -> None:
+        try:
+            self.store.save(self.profile)
+        except OSError as exc:
+            QMessageBox.warning(self, "Perfil", f"No se pudo guardar el perfil: {exc}")
+        if self.worker is not None:
+            self.worker.apply_profile(self.profile)
+        self._update_profile_status()
+
+    @Slot()
+    def _profile_changed(self) -> None:
+        self._save_profile()
+
+    @Slot(int)
+    def _profile_selected(self, row: int) -> None:
+        profile_id = self.profile_selector.itemData(row)
+        if profile_id is None or profile_id == self.profile.id:
+            return
+        try:
+            profile = self.store.load(profile_id)
+            self.store.set_active(profile_id)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Perfil", f"No se pudo cargar el perfil: {exc}")
+            self.profile_selector.setCurrentIndex(
+                self.profile_selector.findData(self.profile.id)
+            )
+            return
+        self.wizard_offered = False
+        self._activate_profile(profile)
+        self.panel.log_message(f"Perfil activo: {profile.name}")
+
+    @Slot()
+    def create_profile(self) -> None:
+        name, ok = QInputDialog.getText(self, "Nuevo perfil", "Nombre de la persona usuaria:")
+        if not ok:
+            return
+        try:
+            profile = self.store.create(name)
+            self.store.set_active(profile.id)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Perfil", str(exc))
+            return
+        self.profile = profile
+        self.wizard_offered = False
+        self._load_profiles()
+
+    @Slot()
+    def delete_profile(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            "Eliminar perfil",
+            f"¿Eliminar el perfil «{self.profile.name}»? Se perderán su calibración y sus "
+            "ajustes. Esta acción no se puede deshacer.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.store.delete(self.profile.id)
+            self.profile = self.store.load_active()
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Perfil", f"No se pudo eliminar el perfil: {exc}")
+            return
+        self.wizard_offered = False
+        self._load_profiles()
+
+    # --- Calibración y recentrado ---------------------------------------------------------
+
+    @Slot()
+    def open_calibration(self) -> None:
+        if self.wizard is not None or self.worker is None:
+            return
+        self.wizard_offered = True
+        self.recenterer = None
+        gestures = [g for g in GESTURES if self.profile.gestures[g].enabled]
+        self.wizard = CalibrationDialog(gestures, self.config.calibration, self)
+        self.wizard.completed.connect(self._calibration_completed)
+        self.wizard.finished.connect(self._wizard_closed)
+        self.wizard.setModal(True)
+        self.wizard.showFullScreen()
+
+    @Slot(object, list)
+    def _calibration_completed(self, calibration: Calibration, skipped: list) -> None:
+        self.profile.calibration = calibration
+        for gesture in skipped:
+            self.profile.gestures[gesture].enabled = False
+        if not self.profile.selection_gestures():
+            for gesture in skipped:
+                self.profile.gestures[gesture].enabled = True
+            QMessageBox.warning(
+                self,
+                "Calibración",
+                "Ningún gesto de selección pudo calibrarse. Ajuste los gestos activos y "
+                "repita la calibración.",
+            )
+        elif skipped:
+            names = ", ".join(GESTURES[gesture].name for gesture in skipped)
+            self.panel.log_message(f"Gestos omitidos y desactivados: {names}")
+        self._save_profile()
+        self.panel.set_profile(self.profile)
+        self.panel.log_message("Calibración guardada en el perfil.")
+
+    @Slot()
+    def _wizard_closed(self) -> None:
+        if self.wizard is not None:
+            self.wizard.deleteLater()
+        self.wizard = None
+
+    @Slot()
+    def start_recenter(self) -> None:
+        if self.profile.calibration is None:
+            self.panel.log_message("Calibre el perfil antes de recentrar.")
+            return
+        if self.recenterer is None:
+            self.recenterer = Recenterer(self.config.calibration)
+            self.panel.log_message("Recentrando: mantenga la cabeza quieta en su nueva postura…")
+
+    def _feed_recenter(self, packet: DisplayPacket) -> None:
+        if self.recenterer is None or self.profile.calibration is None:
+            return
+        features = packet.features if packet.state is TrackingState.TRACKING else None
+        status = self.recenterer.feed(features, packet.result.timestamp_ms)
+        if status is RecenterStatus.COLLECTING:
+            return
+        if status is RecenterStatus.DONE:
+            started = self.recenterer.started_ms or packet.result.timestamp_ms
+            self.profile.calibration = self.recenterer.apply(self.profile.calibration)
+            self._save_profile()
+            seconds = (packet.result.timestamp_ms - started) / 1000
+            self.panel.log_message(f"Puntero recentrado en {seconds:.1f} s.")
+        else:
+            self.panel.log_message("No se pudo recentrar: mantenga la cabeza quieta.")
+        self.recenterer = None
 
     @Slot()
     def start_tracking(self) -> None:
@@ -103,7 +317,10 @@ class MainWindow(QMainWindow):
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
         self.camera_selector.setEnabled(False)
+        self.calibrate_button.setEnabled(True)
+        self.recenter_button.setEnabled(True)
         self.worker = PipelineWorker(self.config, self.project_root)
+        self.worker.apply_profile(self.profile)
         self.thread = QThread(self)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
@@ -124,6 +341,31 @@ class MainWindow(QMainWindow):
 
     @Slot(object)
     def _show_packet(self, packet: DisplayPacket) -> None:
+        self._render_frame(packet)
+        if self.wizard is not None:
+            self.wizard.feed(packet)
+            return
+        self.panel.show_activations(packet.gestures)
+        tracking = packet.state is TrackingState.TRACKING
+        calibration = self.profile.calibration
+        if tracking and packet.features is not None and calibration is not None:
+            self.pointer.set_pointer(
+                calibration.head.to_pointer(packet.features, self.config.calibration.reach)
+            )
+        else:
+            self.pointer.set_pointer(None)
+        if tracking and calibration is None and not self.wizard_offered:
+            self.open_calibration()
+            return
+        for event in packet.gestures.events:
+            if event.action is Action.RECALIBRATE:
+                self.panel.log_event(event)
+                self.start_recenter()
+            else:
+                self.panel.log_event(event, "(acción simulada; se ejecuta desde la Épica 3)")
+        self._feed_recenter(packet)
+
+    def _render_frame(self, packet: DisplayPacket) -> None:
         import cv2
 
         frame = packet.frame_bgr.copy()
@@ -189,9 +431,15 @@ class MainWindow(QMainWindow):
             self.thread.deleteLater()
         self.worker = None
         self.thread = None
+        if self.wizard is not None:
+            self.wizard.reject()
+        self.recenterer = None
+        self.pointer.set_pointer(None)
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
         self.camera_selector.setEnabled(True)
+        self.calibrate_button.setEnabled(False)
+        self.recenter_button.setEnabled(False)
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         if self.worker is not None:

@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 import platform
@@ -8,10 +9,8 @@ from typing import Any
 
 def environment_metadata() -> dict[str, Any]:
     memory_bytes: int | None = None
-    try:
+    with contextlib.suppress(ValueError, OSError, AttributeError):
         memory_bytes = int(os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE"))
-    except (ValueError, OSError, AttributeError):
-        pass
     return {
         "os": platform.platform(),
         "python": platform.python_version(),

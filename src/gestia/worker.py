@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import logging
 import threading
 import time
@@ -10,6 +11,9 @@ from PySide6.QtCore import QObject, Signal, Slot
 from gestia.capture import CaptureProducer, LatestFrameBuffer, OpenCVCamera
 from gestia.config import AppConfig
 from gestia.domain import DisplayPacket, PerformanceSnapshot, TrackingState
+from gestia.features import extract_features
+from gestia.gestures import GestureEngine, GestureFrame
+from gestia.profiles import Profile
 from gestia.tracking import ResultFreshnessGate, TrackingStateMachine
 from gestia.vision import FaceLandmarker, VisionError
 
@@ -27,6 +31,20 @@ class PipelineWorker(QObject):
         self.config, self.project_root = config, project_root
         self._stop = threading.Event()
         self._producer: CaptureProducer | None = None
+        self._profile_lock = threading.Lock()
+        self._pending_profile: Profile | None = None
+
+    def apply_profile(self, profile: Profile) -> None:
+        """Puede llamarse desde la interfaz: el cambio se aplica en el siguiente fotograma."""
+        with self._profile_lock:
+            self._pending_profile = copy.deepcopy(profile)
+
+    def _configure_engine(self, engine: GestureEngine) -> None:
+        with self._profile_lock:
+            profile, self._pending_profile = self._pending_profile, None
+        if profile is not None:
+            ranges = {} if profile.calibration is None else profile.calibration.gestures
+            engine.configure(profile.gestures, ranges, profile.actions)
 
     def request_stop(self) -> None:
         self._stop.set()
@@ -38,6 +56,7 @@ class PipelineWorker(QObject):
         machine = TrackingStateMachine(self.config.tracking.stable_detection_ms)
         gate = ResultFreshnessGate(self.config.vision.max_result_age_ms)
         buffer = LatestFrameBuffer()
+        engine = GestureEngine()
         c = self.config.camera
         producer = CaptureProducer(OpenCVCamera(c.index, c.width, c.height, c.fps), buffer)
         self._producer = producer
@@ -73,6 +92,17 @@ class PipelineWorker(QObject):
                 result_count += 1
                 last_inference_ms = result.inference_ms
                 final_state = machine.observe(result.detected, result.timestamp_ms)
+                features = None
+                if final_state is TrackingState.TRACKING:
+                    height, width = frame.frame_bgr.shape[:2]
+                    features = extract_features(result.landmarks, width / height)
+                self._configure_engine(engine)
+                gestures = GestureFrame()
+                if features is None:
+                    # Sin rostro fiable no se reconoce ningún gesto (HU-04).
+                    engine.reset()
+                else:
+                    gestures = engine.update(features, result.timestamp_ms)
                 elapsed = max(time.perf_counter() - started, 1e-9)
                 performance = PerformanceSnapshot(
                     producer.fps,
@@ -83,7 +113,9 @@ class PipelineWorker(QObject):
                 )
                 self.state_changed.emit(final_state)
                 self.packet_ready.emit(
-                    DisplayPacket(frame.frame_bgr, result, final_state, performance)
+                    DisplayPacket(
+                        frame.frame_bgr, result, final_state, performance, features, gestures
+                    )
                 )
         except Exception as exc:
             LOGGER.exception("Pipeline failure")
@@ -91,7 +123,7 @@ class PipelineWorker(QObject):
             self.state_changed.emit(final_state)
             message = (
                 str(exc)
-                if isinstance(exc, (VisionError, RuntimeError))
+                if isinstance(exc, VisionError | RuntimeError)
                 else f"Error inesperado en el seguimiento: {exc}"
             )
             self.error_occurred.emit(message)
