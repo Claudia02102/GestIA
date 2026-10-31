@@ -10,12 +10,13 @@ import logging
 import os
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from gestia.calibration import Calibration
+from gestia.control import PointerSettings
 from gestia.gestures import (
     DEFAULT_ACTIONS,
     MAX_SENSITIVITY,
@@ -28,7 +29,7 @@ from gestia.gestures import (
 )
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 INDEX_FILE = "index.json"
 
 
@@ -43,6 +44,7 @@ class Profile:
     gestures: dict[GestureId, GestureSettings] = field(default_factory=default_gesture_settings)
     actions: dict[GestureId, Action] = field(default_factory=lambda: dict(DEFAULT_ACTIONS))
     calibration: Calibration | None = None
+    pointer: PointerSettings = field(default_factory=PointerSettings)
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
 
@@ -73,6 +75,7 @@ class Profile:
             },
             "actions": {str(gesture): str(action) for gesture, action in self.actions.items()},
             "calibration": None if self.calibration is None else self.calibration.to_dict(),
+            "pointer": asdict(self.pointer),
         }
 
     @classmethod
@@ -93,12 +96,16 @@ class Profile:
                 {GestureId(k): Action(v) for k, v in raw.get("actions", {}).items()}
             )
             calibration = raw.get("calibration")
+            # Los perfiles del Sprint 2 no tienen esta sección: se usan los valores por defecto.
+            pointer = PointerSettings(**raw.get("pointer", {}))
+            pointer.validate()
             return cls(
                 id=str(raw["id"]),
                 name=str(raw["name"]),
                 gestures=gestures,
                 actions=actions,
                 calibration=None if calibration is None else Calibration.from_dict(calibration),
+                pointer=pointer,
                 created_at=str(raw.get("created_at", _now())),
                 updated_at=str(raw.get("updated_at", _now())),
             )

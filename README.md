@@ -1,4 +1,4 @@
-# GestIA — Sprint 2
+# GestIA — Sprint 3
 
 Aplicación de escritorio local que muestra la webcam, detecta **un rostro** con MediaPipe
 Tasks Face Landmarker, dibuja sus puntos y gestiona pérdida y recuperación (Sprint 1, Épica E1).
@@ -14,10 +14,22 @@ El Sprint 2 (Épica E2, «Calibración y perfiles») añade:
 | HU-10 Recalibración rápida | Gesto «Levantar las cejas» (o botón **Recentrar**): toma la postura actual como nuevo centro sin cambiar el resto del perfil. |
 | HU-11 Múltiples perfiles | Crear, cambiar y eliminar (con confirmación) perfiles en el mismo equipo. |
 
-Todavía **no** se controla el cursor ni se hacen clics reales: eso es la Épica E3. Los gestos
-reconocidos se muestran en la pestaña *Eventos* como acciones simuladas y el puntero se ve en
-una pantalla en miniatura. La utilidad de accesibilidad debe evaluarse con usuarios; no es un
-resultado demostrado.
+El Sprint 3 (Épica E3, «Control del puntero») mueve el **cursor real** del sistema:
+
+| Historia | Qué incluye |
+|---|---|
+| HU-12 Cursor con la cabeza | La posición calibrada de la cabeza se lleva a la pantalla principal, llega a todos los bordes y una zona muerta evita que se mueva con la cabeza quieta. |
+| HU-13 Clic izquierdo | «Abrir la boca» hace un solo clic en la posición del cursor. |
+| HU-14 Clic derecho y doble clic | «Sonreír» → clic derecho; «Guiño izquierdo» → doble clic (gestos distintos). |
+| HU-15 Clic por permanencia | Opcional: clic al mantener el cursor quieto el tiempo y radio configurados. |
+| HU-16 Arrastrar y soltar | «Guiño derecho» presiona; el mismo gesto (o el de clic) suelta. Si se pierde el rostro, se cancela (Esc y vuelta al origen). |
+| HU-17 Desplazamiento | «Fruncir los labios» activa el modo: alejar la cabeza del centro desplaza vertical u horizontalmente; repetir el gesto vuelve al control normal. |
+| HU-18 Velocidad y suavizado | Velocidad (×0,5 a ×3), suavizado (filtro One Euro, 0–10) y zona muerta por perfil. |
+
+Además, «Cerrar ambos ojos», el botón **Pausar control** o **Ctrl+Alt+P** (desde cualquier
+aplicación) pausan y reanudan el control. Es un adelanto de HU-29 (Épica E6) para poder
+detener el cursor con seguridad. La utilidad de accesibilidad debe evaluarse con usuarios; no
+es un resultado demostrado.
 
 ## Requisitos
 
@@ -79,9 +91,13 @@ y permite iniciar de nuevo.
 3. En la pestaña **Gestos** puede activar/desactivar gestos, cambiar sensibilidad y tiempo de
    sostenimiento; la barra muestra en vivo la intensidad del gesto. **Mapeo** lista los gestos
    activos con su acción y **Eventos** registra los gestos reconocidos.
-4. Si cambia de postura, levante las cejas (≈1 s) o pulse **Recentrar** y quédese quieto: el
+4. Con **Controlar el cursor del sistema** marcado (por defecto), el cursor sigue la cabeza
+   en cuanto el perfil está calibrado. Para que quien asiste recupere el ratón: desmarque la
+   casilla, pulse **Ctrl+Alt+P** o cierre los ojos ~1 s. La pestaña **Puntero** ajusta
+   velocidad, suavizado, zona muerta, clic por permanencia y velocidad de desplazamiento.
+5. Si cambia de postura, levante las cejas (≈1 s) o pulse **Recentrar** y quédese quieto: el
    centro se actualiza en ~1 s (límite 4,5 s).
-5. **Nuevo perfil**, el selector y **Eliminar perfil** gestionan varias personas usuarias.
+6. **Nuevo perfil**, el selector y **Eliminar perfil** gestionan varias personas usuarias.
    **Calibrar** repite el asistente completo para el perfil activo.
 
 Gestos y acción asignada por defecto (la reasignación es la Épica E5):
@@ -90,10 +106,14 @@ Gestos y acción asignada por defecto (la reasignación es la Épica E5):
 |---|---|---|
 | Abrir la boca | Clic izquierdo | Sí |
 | Sonreír | Clic derecho | Sí |
+| Fruncir los labios | Modo desplazamiento | Sí |
 | Cerrar ambos ojos (≥ 800 ms) | Pausar / reanudar | Sí |
 | Levantar las cejas (≥ 1 s) | Recalibrar (recentrar) | Sí |
 | Guiño izquierdo | Doble clic | No |
 | Guiño derecho | Arrastrar y soltar | No |
+
+Los perfiles creados en el Sprint 2 se cargan sin problema, pero «Fruncir los labios» aparece
+*Sin calibrar*: pulse **Calibrar** una vez para incluirlo.
 
 ## Configuración y datos
 
@@ -125,7 +145,9 @@ contraluz, lentes transparentes, pérdida, desconexión y reinicio. Debe llenars
 reales: las pruebas simuladas no demuestran FPS ni robustez física. Consulte también el
 [informe del Sprint 1](docs/INFORME_SPRINT_1.md), el
 [informe del Sprint 2](docs/INFORME_SPRINT_2.md) y la
-[matriz de aceptación del Sprint 2](docs/MATRIZ_PRUEBAS_SPRINT_2.md).
+[matriz de aceptación del Sprint 2](docs/MATRIZ_PRUEBAS_SPRINT_2.md), el
+[informe del Sprint 3](docs/INFORME_SPRINT_3.md) y la
+[matriz de aceptación del Sprint 3](docs/MATRIZ_PRUEBAS_SPRINT_3.md).
 
 ## Problemas frecuentes
 
@@ -141,6 +163,12 @@ reales: las pruebas simuladas no demuestran FPS ni robustez física. Consulte ta
   HTTPS con su propio certificado. Exporte su certificado raíz, combínelo con los de `certifi` en
   un archivo PEM y configúrelo con `cert = <ruta>` en `.venv\pip.ini`, sin desactivar la
   verificación SSL.
+- **El cursor no se mueve:** compruebe que el perfil esté *Calibrado*, que la casilla
+  *Controlar el cursor del sistema* esté marcada y que el control no esté en pausa.
+- **El cursor llega desplazado con escalado de Windows (125 %, 150 %):** se convierte a píxeles
+  físicos; si aún ocurre, anote el escalado en la matriz. Solo se controla la pantalla principal.
+- **Ventanas con permisos de administrador:** Windows no deja que una app normal haga clic en
+  ellas (UIPI). Ejecute GestIA como administrador si necesita controlarlas.
 - No instale además `opencv-python-headless`: comparte el módulo `cv2` con las otras variantes y puede sobrescribirlo.
 
 ## Arquitectura
@@ -157,12 +185,14 @@ reales: las pruebas simuladas no demuestran FPS ni robustez física. Consulte ta
   sensibilidad, sostenimiento, histéresis).
 - `calibration.py`: asistente de calibración, mapeo cabeza → puntero y recentrado (lógica pura).
 - `profiles.py`: perfiles JSON y su almacén.
+- `control.py`: control del puntero (filtro One Euro, zona muerta, clics, permanencia,
+  arrastre, desplazamiento, pausa) y backend pynput.
 - `ui_calibration.py`, `ui_profile.py`, `ui_widgets.py`: asistente, panel de gestos y
   puntero virtual.
 
 Flujo de datos: `capture` → `vision` (landmarks) → `tracking` (estado) → `features` →
 `gestures` (en el hilo del worker) → `DisplayPacket` → `ui` (vista, asistente, recentrado,
-perfil).
+perfil) → `control` (cursor del sistema).
 
 Calibración, gestos, comandos y adaptador del SO se incorporarán cuando tengan comportamiento
 real, sin crear módulos vacíos. No se crea ni publica ningún repositorio remoto en este sprint.

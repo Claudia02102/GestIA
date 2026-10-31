@@ -16,6 +16,7 @@ class GestureId(StrEnum):
     WINK_RIGHT = "wink_right"
     BROW_RAISE = "brow_raise"
     SMILE = "smile"
+    PUCKER = "pucker"
 
 
 class Action(StrEnum):
@@ -25,6 +26,7 @@ class Action(StrEnum):
     DRAG = "drag"
     PAUSE = "pause"
     RECALIBRATE = "recalibrate"
+    SCROLL = "scroll"
 
 
 ACTION_TEXT = {
@@ -34,6 +36,7 @@ ACTION_TEXT = {
     Action.DRAG: "Arrastrar y soltar",
     Action.PAUSE: "Pausar / reanudar",
     Action.RECALIBRATE: "Recalibrar (recentrar)",
+    Action.SCROLL: "Modo desplazamiento",
 }
 SELECTION_ACTIONS = frozenset(
     {Action.LEFT_CLICK, Action.RIGHT_CLICK, Action.DOUBLE_CLICK, Action.DRAG}
@@ -47,6 +50,8 @@ class GestureSpec:
     instruction: str
     signal: Callable[[FaceFeatures], float]
     group: str = ""
+    # Sentido exigido al calibrar: +1 la medida crece, -1 decrece, 0 cualquiera.
+    direction: int = 0
 
 
 GESTURES: dict[GestureId, GestureSpec] = {
@@ -74,7 +79,12 @@ GESTURES: dict[GestureId, GestureSpec] = {
         ),
         GestureSpec(
             GestureId.SMILE, "Sonreír", "Sonría ampliamente y mantenga la sonrisa",
-            lambda f: f.smile,
+            lambda f: f.smile, direction=1,
+        ),
+        # Misma medida que la sonrisa en sentido contrario: la boca se estrecha.
+        GestureSpec(
+            GestureId.PUCKER, "Fruncir los labios", "Junte los labios como para dar un beso",
+            lambda f: f.smile, direction=-1,
         ),
     )
 }
@@ -86,6 +96,7 @@ DEFAULT_ACTIONS: dict[GestureId, Action] = {
     GestureId.WINK_RIGHT: Action.DRAG,
     GestureId.BLINK: Action.PAUSE,
     GestureId.BROW_RAISE: Action.RECALIBRATE,
+    GestureId.PUCKER: Action.SCROLL,
 }
 # Los guiños exigen control independiente de los párpados; se ofrecen desactivados.
 DEFAULT_DISABLED = frozenset({GestureId.WINK_LEFT, GestureId.WINK_RIGHT})

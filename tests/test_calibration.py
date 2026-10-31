@@ -178,3 +178,15 @@ def test_recenter_fails_if_head_never_settles() -> None:
         last, ts = ts, ts + 33
     assert status is RecenterStatus.FAILED
     assert CONFIG.recenter_timeout_ms <= last < CONFIG.recenter_timeout_ms + 33
+
+
+def test_smile_and_pucker_require_opposite_directions() -> None:
+    session = CalibrationSession([GestureId.PUCKER], CONFIG)
+    clock = Clock()
+    calibrate_head(session, clock)
+    assert session.step.gesture is GestureId.PUCKER
+    clock.hold(session, face(smile=0.47), 3000)
+    assert session.step.gesture is GestureId.PUCKER
+    clock.hold(session, face(smile=0.34), 3000)
+    assert session.step.kind is StepKind.CORNERS
+    assert session.gesture_ranges[GestureId.PUCKER].peak < 0.4

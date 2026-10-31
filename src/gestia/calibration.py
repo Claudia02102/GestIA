@@ -25,6 +25,7 @@ MIN_GESTURE_DELTA = {
     GestureId.WINK_RIGHT: 0.05,
     GestureId.BROW_RAISE: 0.025,
     GestureId.SMILE: 0.025,
+    GestureId.PUCKER: 0.025,
 }
 CORNERS = ("top_left", "top_right", "bottom_left", "bottom_right")
 CORNER_ZONE = 0.05
@@ -337,7 +338,12 @@ class CalibrationSession:
         spec = GESTURES[step.gesture]
         neutral_value = spec.signal(_neutral_features(self.neutral))
         value = spec.signal(features)
-        displaced = abs(value - neutral_value) >= MIN_GESTURE_DELTA[step.gesture]
+        delta = value - neutral_value
+        if spec.direction:
+            delta *= spec.direction
+        else:
+            delta = abs(delta)
+        displaced = delta >= MIN_GESTURE_DELTA[step.gesture]
         done = self._hold.add(timestamp_ms, (value,), features, displaced)
         if done:
             peak = float(statistics.median(spec.signal(item) for item in done))

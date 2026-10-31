@@ -87,6 +87,30 @@ def test_profile_file_contains_no_images_or_landmarks(tmp_path) -> None:
     raw = json.loads((tmp_path / f"{profile.id}.json").read_text(encoding="utf-8"))
     assert set(raw) == {
         "schema_version", "id", "name", "created_at", "updated_at", "gestures", "actions",
-        "calibration",
+        "calibration", "pointer",
     }
     assert "landmarks" not in json.dumps(raw)
+
+
+def test_sprint_2_profile_without_pointer_section_still_loads(tmp_path) -> None:
+    store = ProfileStore(tmp_path)
+    raw = Profile("viejo", "Viejo").to_dict()
+    del raw["pointer"]
+    del raw["gestures"]["pucker"]
+    raw["schema_version"] = 1
+    (tmp_path / "viejo.json").write_text(json.dumps(raw), encoding="utf-8")
+    profile = store.load("viejo")
+    assert profile.pointer.enabled and profile.pointer.speed == 1.0
+    assert GestureId.PUCKER in profile.gestures
+
+
+def test_pointer_settings_round_trip_and_validation(tmp_path) -> None:
+    store = ProfileStore(tmp_path)
+    profile = store.load_active()
+    profile.pointer.speed, profile.pointer.dwell_enabled = 2.5, True
+    store.save(profile)
+    assert store.load(profile.id).pointer == profile.pointer
+    raw = profile.to_dict()
+    raw["pointer"]["speed"] = 9
+    with pytest.raises(ValueError):
+        Profile.from_dict(raw)
