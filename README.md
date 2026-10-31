@@ -1,4 +1,4 @@
-# GestIA — Sprint 3
+# GestIA — Sprint 4
 
 Aplicación de escritorio local que muestra la webcam, detecta **un rostro** con MediaPipe
 Tasks Face Landmarker, dibuja sus puntos y gestiona pérdida y recuperación (Sprint 1, Épica E1).
@@ -25,6 +25,17 @@ El Sprint 3 (Épica E3, «Control del puntero») mueve el **cursor real** del si
 | HU-16 Arrastrar y soltar | «Guiño derecho» presiona; el mismo gesto (o el de clic) suelta. Si se pierde el rostro, se cancela (Esc y vuelta al origen). |
 | HU-17 Desplazamiento | «Fruncir los labios» activa el modo: alejar la cabeza del centro desplaza vertical u horizontalmente; repetir el gesto vuelve al control normal. |
 | HU-18 Velocidad y suavizado | Velocidad (×0,5 a ×3), suavizado (filtro One Euro, 0–10) y zona muerta por perfil. |
+
+El Sprint 4 (Épica E4, «Escritura en pantalla») añade un **teclado virtual** que escribe en
+cualquier aplicación:
+
+| Historia | Qué incluye |
+|---|---|
+| HU-19 Teclado virtual | Ventana flotante siempre encima que no toma el foco; se pulsa con el cursor de la cabeza y el gesto de clic (o por permanencia). Incluye ñ, tildes y signos. |
+| HU-20 Predicción de palabras | Tres sugerencias en español según las primeras letras; aprende las palabras que se escriben (una nueva se sugiere desde la segunda vez). |
+| HU-21 Teclas especiales y atajos | Intro, Borrar, Supr, Tab, Esc, flechas, Inicio, Fin, Mayús, Bloq Mayús y Copiar, Pegar, Cortar, Deshacer, Seleccionar todo. |
+| HU-22 Frases frecuentes | Lista editable por perfil; una selección escribe la frase completa. |
+| HU-23 Teclado ajustable | Tamaño de tecla y distribución (QWERTY o alfabética), guardados en el perfil; el teclado nunca se sale de la pantalla. |
 
 Además, «Cerrar ambos ojos», el botón **Pausar control** o **Ctrl+Alt+P** (desde cualquier
 aplicación) pausan y reanudan el control. Es un adelanto de HU-29 (Épica E6) para poder
@@ -97,7 +108,11 @@ y permite iniciar de nuevo.
    velocidad, suavizado, zona muerta, clic por permanencia y velocidad de desplazamiento.
 5. Si cambia de postura, levante las cejas (≈1 s) o pulse **Recentrar** y quédese quieto: el
    centro se actualiza en ~1 s (límite 4,5 s).
-6. **Nuevo perfil**, el selector y **Eliminar perfil** gestionan varias personas usuarias.
+6. **Mostrar teclado** abre el teclado virtual abajo de la pantalla. Haga clic primero en la
+   aplicación donde quiere escribir; las teclas se pulsan con el gesto de clic y el texto va
+   a esa aplicación. **Frases** cambia a las frases frecuentes. La pestaña **Teclado** ajusta
+   distribución, tamaño, frases y permite olvidar las palabras aprendidas.
+7. **Nuevo perfil**, el selector y **Eliminar perfil** gestionan varias personas usuarias.
    **Calibrar** repite el asistente completo para el perfil activo.
 
 Gestos y acción asignada por defecto (la reasignación es la Épica E5):
@@ -146,8 +161,10 @@ reales: las pruebas simuladas no demuestran FPS ni robustez física. Consulte ta
 [informe del Sprint 1](docs/INFORME_SPRINT_1.md), el
 [informe del Sprint 2](docs/INFORME_SPRINT_2.md) y la
 [matriz de aceptación del Sprint 2](docs/MATRIZ_PRUEBAS_SPRINT_2.md), el
-[informe del Sprint 3](docs/INFORME_SPRINT_3.md) y la
-[matriz de aceptación del Sprint 3](docs/MATRIZ_PRUEBAS_SPRINT_3.md).
+[informe del Sprint 3](docs/INFORME_SPRINT_3.md), la
+[matriz de aceptación del Sprint 3](docs/MATRIZ_PRUEBAS_SPRINT_3.md), el
+[informe del Sprint 4](docs/INFORME_SPRINT_4.md) y la
+[matriz de aceptación del Sprint 4](docs/MATRIZ_PRUEBAS_SPRINT_4.md).
 
 ## Problemas frecuentes
 
@@ -187,8 +204,11 @@ reales: las pruebas simuladas no demuestran FPS ni robustez física. Consulte ta
 - `profiles.py`: perfiles JSON y su almacén.
 - `control.py`: control del puntero (filtro One Euro, zona muerta, clics, permanencia,
   arrastre, desplazamiento, pausa) y backend pynput.
-- `ui_calibration.py`, `ui_profile.py`, `ui_widgets.py`: asistente, panel de gestos y
-  puntero virtual.
+- `keyboard.py`: teclado virtual (distribuciones, teclas especiales, atajos, frases) y backend
+  pynput.
+- `prediction.py`, `lexicon_es.py`: predicción de palabras con diccionario local y aprendizaje.
+- `ui_calibration.py`, `ui_profile.py`, `ui_widgets.py`, `ui_keyboard.py`: asistente, panel de
+  gestos, puntero virtual y ventana del teclado.
 
 Flujo de datos: `capture` → `vision` (landmarks) → `tracking` (estado) → `features` →
 `gestures` (en el hilo del worker) → `DisplayPacket` → `ui` (vista, asistente, recentrado,
