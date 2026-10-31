@@ -7,6 +7,7 @@ import time
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
+    QFormLayout,
     QGridLayout,
     QLabel,
     QListWidget,
@@ -94,12 +95,81 @@ class GesturePanel(QTabWidget):
         mapping_layout.addWidget(QLabel("Gestos activos y acción asignada:"))
         mapping_layout.addWidget(self.mapping)
         mapping_layout.addWidget(
-            QLabel("Las acciones sobre el sistema operativo se implementan en la Épica 3.")
+            QLabel("La reasignación de gestos a acciones se implementa en la Épica 5.")
         )
         self.addTab(mapping_page, "Mapeo")
 
+        self.addTab(self._build_pointer_page(), "Puntero")
+
         self.events = QListWidget()
         self.addTab(self.events, "Eventos")
+
+    def _build_pointer_page(self) -> QWidget:
+        page = QWidget()
+        form = QFormLayout(page)
+        self.speed = QSlider(Qt.Orientation.Horizontal)
+        self.speed.setRange(5, 30)
+        self.speed_label = QLabel()
+        self.smoothing = QSlider(Qt.Orientation.Horizontal)
+        self.smoothing.setRange(0, 10)
+        self.smoothing_label = QLabel()
+        self.dead_zone = QSpinBox()
+        self.dead_zone.setRange(0, 40)
+        self.dead_zone.setSuffix(" px")
+        self.dwell = QCheckBox("Clic al mantener el cursor quieto")
+        self.dwell_ms = QSpinBox()
+        self.dwell_ms.setRange(200, 5000)
+        self.dwell_ms.setSingleStep(100)
+        self.dwell_ms.setSuffix(" ms")
+        self.dwell_radius = QSpinBox()
+        self.dwell_radius.setRange(5, 150)
+        self.dwell_radius.setSuffix(" px")
+        self.scroll_speed = QSlider(Qt.Orientation.Horizontal)
+        self.scroll_speed.setRange(1, 10)
+        form.addRow("Velocidad:", self.speed)
+        form.addRow("", self.speed_label)
+        form.addRow("Suavizado:", self.smoothing)
+        form.addRow("", self.smoothing_label)
+        form.addRow("Zona muerta:", self.dead_zone)
+        form.addRow(self.dwell)
+        form.addRow("Tiempo de permanencia:", self.dwell_ms)
+        form.addRow("Radio de permanencia:", self.dwell_radius)
+        form.addRow("Velocidad de desplazamiento:", self.scroll_speed)
+        note = QLabel(
+            "Más velocidad = menos giro de cabeza para recorrer la pantalla. Más suavizado = "
+            "menos temblor, algo más de retardo. La zona muerta evita que el cursor se mueva "
+            "con la cabeza quieta. Modo desplazamiento: active su gesto y aleje la cabeza del "
+            "centro; repita el gesto (o el de clic izquierdo) para salir."
+        )
+        note.setWordWrap(True)
+        form.addRow(note)
+        for slider in (self.speed, self.smoothing, self.scroll_speed):
+            slider.valueChanged.connect(self._pointer_changed)
+        for spin in (self.dead_zone, self.dwell_ms, self.dwell_radius):
+            spin.valueChanged.connect(self._pointer_changed)
+        self.dwell.toggled.connect(self._pointer_changed)
+        return page
+
+    def _pointer_labels(self) -> None:
+        self.speed_label.setText(f"× {self.speed.value() / 10:.1f}")
+        level = self.smoothing.value()
+        self.smoothing_label.setText("Sin suavizado" if level == 0 else f"Nivel {level}")
+        for widget in (self.dwell_ms, self.dwell_radius):
+            widget.setEnabled(self.dwell.isChecked())
+
+    def _pointer_changed(self) -> None:
+        self._pointer_labels()
+        if self._loading or self.profile is None:
+            return
+        pointer = self.profile.pointer
+        pointer.speed = self.speed.value() / 10
+        pointer.smoothing = self.smoothing.value()
+        pointer.dead_zone_px = self.dead_zone.value()
+        pointer.dwell_enabled = self.dwell.isChecked()
+        pointer.dwell_ms = self.dwell_ms.value()
+        pointer.dwell_radius_px = self.dwell_radius.value()
+        pointer.scroll_speed = self.scroll_speed.value()
+        self.changed.emit()
 
     def set_profile(self, profile: Profile) -> None:
         self.profile = profile
@@ -110,6 +180,15 @@ class GesturePanel(QTabWidget):
                 self.sliders[gesture].setValue(settings.sensitivity)
                 self.holds[gesture].setValue(settings.hold_ms)
                 self._update_label(gesture)
+            pointer = profile.pointer
+            self.speed.setValue(round(pointer.speed * 10))
+            self.smoothing.setValue(pointer.smoothing)
+            self.dead_zone.setValue(pointer.dead_zone_px)
+            self.dwell.setChecked(pointer.dwell_enabled)
+            self.dwell_ms.setValue(pointer.dwell_ms)
+            self.dwell_radius.setValue(pointer.dwell_radius_px)
+            self.scroll_speed.setValue(pointer.scroll_speed)
+            self._pointer_labels()
         finally:
             self._loading = False
         self.refresh()

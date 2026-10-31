@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Slot
-from PySide6.QtGui import QCloseEvent, QImage, QPixmap
+from PySide6.QtCore import QObject, Qt, QThread, Signal, Slot
+from PySide6.QtGui import QCloseEvent, QGuiApplication, QImage, QPixmap
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFormLayout,
     QHBoxLayout,
@@ -19,6 +21,14 @@ from PySide6.QtWidgets import (
 
 from gestia.calibration import Calibration, Recenterer, RecenterStatus
 from gestia.config import AppConfig, resolve_from_project
+from gestia.control import (
+    ControlMode,
+    ControlStatus,
+    PointerController,
+    PynputBackend,
+    ScreenArea,
+    apply_speed,
+)
 from gestia.domain import DisplayPacket, TrackingState
 from gestia.gestures import GESTURES, Action
 from gestia.persistence import MetricsWriter
@@ -27,6 +37,45 @@ from gestia.ui_calibration import CalibrationDialog
 from gestia.ui_profile import GesturePanel
 from gestia.ui_widgets import PointerPreview
 from gestia.worker import PipelineWorker
+
+LOGGER = logging.getLogger(__name__)
+PAUSE_HOTKEY = "<ctrl>+<alt>+p"
+MODE_TEXT = {
+    ControlMode.DISABLED: ("Cursor: control desactivado", "#64748b"),
+    ControlMode.NO_FACE: ("Cursor: detenido (sin rostro)", "#ea580c"),
+    ControlMode.NORMAL: ("Cursor: controlado por la cabeza", "#16a34a"),
+    ControlMode.DRAGGING: ("Cursor: arrastrando", "#2563eb"),
+    ControlMode.SCROLLING: ("Cursor: modo desplazamiento", "#7c3aed"),
+    ControlMode.PAUSED: ("Cursor: EN PAUSA", "#ca8a04"),
+}
+
+
+class HotkeyBridge(QObject):
+    """Atajo global de pausa; pynput llama desde su hilo y la señal llega al de la interfaz."""
+
+    triggered = Signal()
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._listener = None
+        try:
+            from pynput import keyboard
+
+            self._listener = keyboard.GlobalHotKeys({PAUSE_HOTKEY: self.triggered.emit})
+            self._listener.start()
+        except Exception:  # noqa: BLE001 - sin servidor gráfico o sin permisos
+            LOGGER.warning("No se pudo registrar el atajo global de pausa", exc_info=True)
+            self._listener = None
+
+    @property
+    def active(self) -> bool:
+        return self._listener is not None
+
+    def stop(self) -> None:
+        if self._listener is not None:
+            self._listener.stop()
+            self._listener = None
+
 
 STATE_TEXT = {
     TrackingState.STOPPED: "Detenido",
@@ -49,6 +98,9 @@ class MainWindow(QMainWindow):
         self.wizard: CalibrationDialog | None = None
         self.wizard_offered = False
         self.recenterer: Recenterer | None = None
+        self.controller: PointerController | None = None
+        self.hotkeys = HotkeyBridge()
+        self.hotkeys.triggered.connect(self.toggle_pause)
         self.setWindowTitle("GestIA — seguimiento facial")
         self.resize(1280, 760)
         self._build_ui()
@@ -103,6 +155,22 @@ class MainWindow(QMainWindow):
         profile_bar.addStretch()
         layout.addLayout(profile_bar)
 
+        control_bar = QHBoxLayout()
+        self.control_check = QCheckBox("Controlar el cursor del sistema")
+        self.control_check.toggled.connect(self._control_toggled)
+        self.pause_button = QPushButton("Pausar control")
+        self.pause_button.setEnabled(False)
+        self.pause_button.setMinimumWidth(150)
+        self.pause_button.clicked.connect(self.toggle_pause)
+        self.mode_label = QLabel()
+        hotkey = "Ctrl+Alt+P pausa o reanuda desde cualquier aplicación."
+        hotkey_label = QLabel(hotkey if self.hotkeys.active else "")
+        hotkey_label.setStyleSheet("color: #64748b;")
+        for widget in (self.control_check, self.pause_button, self.mode_label, hotkey_label):
+            control_bar.addWidget(widget)
+        control_bar.addStretch()
+        layout.addLayout(control_bar)
+
         body = QHBoxLayout()
         left = QVBoxLayout()
         right = QVBoxLayout()
@@ -137,7 +205,7 @@ class MainWindow(QMainWindow):
         guidance.setWordWrap(True)
         left.addWidget(guidance)
 
-        right.addWidget(QLabel("Puntero virtual (vista previa; aún no mueve el cursor):"))
+        right.addWidget(QLabel("Puntero (vista previa de la pantalla):"))
         self.pointer = PointerPreview()
         self.pointer.setMinimumHeight(170)
         right.addWidget(self.pointer)
@@ -163,6 +231,7 @@ class MainWindow(QMainWindow):
         self.panel.set_profile(profile)
         self.pointer.set_pointer(None)
         self._update_profile_status()
+        self._apply_pointer_settings()
         if self.worker is not None:
             self.worker.apply_profile(profile)
 
@@ -182,6 +251,54 @@ class MainWindow(QMainWindow):
         if self.worker is not None:
             self.worker.apply_profile(self.profile)
         self._update_profile_status()
+        self._apply_pointer_settings()
+
+    def _apply_pointer_settings(self) -> None:
+        self.control_check.blockSignals(True)
+        self.control_check.setChecked(self.profile.pointer.enabled)
+        self.control_check.blockSignals(False)
+        if self.controller is not None:
+            self.controller.configure(self.profile.pointer)
+
+    @Slot(bool)
+    def _control_toggled(self, enabled: bool) -> None:
+        self.profile.pointer.enabled = enabled
+        self._save_profile()
+
+    @Slot()
+    def toggle_pause(self) -> None:
+        if self.controller is None:
+            return
+        self.controller.toggle_pause()
+        paused = self.controller.paused
+        self.pause_button.setText("Reanudar control" if paused else "Pausar control")
+        self.panel.log_message("Control en pausa." if paused else "Control reanudado.")
+
+    def _create_controller(self) -> None:
+        screen = QGuiApplication.primaryScreen()
+        geometry, ratio = screen.geometry(), screen.devicePixelRatio()
+        # Qt trabaja en píxeles lógicos; SendInput, en físicos (escalado de Windows).
+        area = ScreenArea(
+            round(geometry.x() * ratio), round(geometry.y() * ratio),
+            round(geometry.width() * ratio), round(geometry.height() * ratio),
+        )
+        try:
+            backend = PynputBackend()
+        except Exception as exc:  # noqa: BLE001 - p. ej. sin servidor gráfico
+            QMessageBox.warning(
+                self, "Control del cursor", f"No se puede controlar el cursor: {exc}"
+            )
+            return
+        self.controller = PointerController(backend, area, self.profile.pointer)
+        self.pause_button.setEnabled(True)
+        self.pause_button.setText("Pausar control")
+
+    def _show_control(self, status: ControlStatus) -> None:
+        text, color = MODE_TEXT[status.mode]
+        if status.dwell_progress > 0:
+            text += f" · permanencia {status.dwell_progress:.0%}"
+        self.mode_label.setText(text)
+        self.mode_label.setStyleSheet(f"font-weight: 600; color: {color};")
 
     @Slot()
     def _profile_changed(self) -> None:
@@ -321,6 +438,7 @@ class MainWindow(QMainWindow):
         self.recenter_button.setEnabled(True)
         self.worker = PipelineWorker(self.config, self.project_root)
         self.worker.apply_profile(self.profile)
+        self._create_controller()
         self.thread = QThread(self)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
@@ -348,21 +466,31 @@ class MainWindow(QMainWindow):
         self.panel.show_activations(packet.gestures)
         tracking = packet.state is TrackingState.TRACKING
         calibration = self.profile.calibration
+        pointer = None
         if tracking and packet.features is not None and calibration is not None:
-            self.pointer.set_pointer(
-                calibration.head.to_pointer(packet.features, self.config.calibration.reach)
-            )
-        else:
-            self.pointer.set_pointer(None)
+            pointer = calibration.head.to_pointer(packet.features, self.config.calibration.reach)
+        self.pointer.set_pointer(
+            None if pointer is None else apply_speed(pointer, self.profile.pointer.speed)
+        )
         if tracking and calibration is None and not self.wizard_offered:
             self.open_calibration()
             return
+        os_events = []
         for event in packet.gestures.events:
+            self.panel.log_event(event)
             if event.action is Action.RECALIBRATE:
-                self.panel.log_event(event)
                 self.start_recenter()
             else:
-                self.panel.log_event(event, "(acción simulada; se ejecuta desde la Épica 3)")
+                os_events.append(event)
+        if self.controller is not None:
+            status = self.controller.update(pointer, os_events, packet.result.timestamp_ms)
+            for item in status.executed:
+                self.panel.log_message(f"Ejecutado: {item}")
+            if any(event.action is Action.PAUSE for event in os_events):
+                self.pause_button.setText(
+                    "Reanudar control" if self.controller.paused else "Pausar control"
+                )
+            self._show_control(status)
         self._feed_recenter(packet)
 
     def _render_frame(self, packet: DisplayPacket) -> None:
@@ -433,6 +561,11 @@ class MainWindow(QMainWindow):
         self.thread = None
         if self.wizard is not None:
             self.wizard.reject()
+        if self.controller is not None:
+            self.controller.release_all(cancel=True)
+            self.controller = None
+        self.pause_button.setEnabled(False)
+        self.mode_label.setText("")
         self.recenterer = None
         self.pointer.set_pointer(None)
         self.start_button.setEnabled(True)
@@ -442,6 +575,8 @@ class MainWindow(QMainWindow):
         self.recenter_button.setEnabled(False)
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
+        if self.controller is not None:
+            self.controller.release_all(cancel=True)
         if self.worker is not None:
             self.worker.request_stop()
         if self.thread is not None and not self.thread.wait(3000):
@@ -452,4 +587,5 @@ class MainWindow(QMainWindow):
             )
             event.ignore()
             return
+        self.hotkeys.stop()
         event.accept()

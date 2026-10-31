@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gestia"
-version = "0.2.0"
-description = "Seguimiento facial, calibración y perfiles locales - Sprint 2"
+version = "0.3.0"
+description = "Control del computador con gestos faciales - Sprint 3"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = [
@@ -13,6 +13,7 @@ dependencies = [
   "numpy==1.26.4",
   "opencv-python==4.11.0.86",
   "PySide6==6.8.2.1",
+  "pynput==1.8.1",
 ]
 [project.optional-dependencies]
 dev = ["pytest==8.3.5", "ruff==0.9.10"]
