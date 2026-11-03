@@ -100,8 +100,11 @@ y permite iniciar de nuevo.
    - En la verificación final hay que llevar el puntero virtual a las cuatro esquinas. Si no
      se logra en 30 s, se repite solo el rango de cabeza.
 3. En la pestaña **Gestos** puede activar/desactivar gestos, cambiar sensibilidad y tiempo de
-   sostenimiento; la barra muestra en vivo la intensidad del gesto. **Mapeo** lista los gestos
-   activos con su acción y **Eventos** registra los gestos reconocidos.
+   sostenimiento; la barra muestra en vivo la intensidad del gesto. En **Mapeo** cada gesto
+   elige su acción en un desplegable: el cambio se aplica al instante y se guarda en el perfil.
+   Si la acción ya la usa otro gesto, ambos intercambian sus acciones, y siempre debe quedar un
+   gesto activo con clic izquierdo (o el clic por permanencia). **Eventos** registra los gestos
+   reconocidos.
 4. Con **Controlar el cursor del sistema** marcado (por defecto), el cursor sigue la cabeza
    en cuanto el perfil está calibrado. Para que quien asiste recupere el ratón: desmarque la
    casilla, pulse **Ctrl+Alt+P** o cierre los ojos ~1 s. La pestaña **Puntero** ajusta
@@ -115,7 +118,7 @@ y permite iniciar de nuevo.
 7. **Nuevo perfil**, el selector y **Eliminar perfil** gestionan varias personas usuarias.
    **Calibrar** repite el asistente completo para el perfil activo.
 
-Gestos y acción asignada por defecto (la reasignación es la Épica E5):
+Gestos y acción asignada por defecto (se puede cambiar en la pestaña **Mapeo**, HU P3-10):
 
 | Gesto | Acción | Activo por defecto |
 |---|---|---|
