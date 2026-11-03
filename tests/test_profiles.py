@@ -141,3 +141,15 @@ def test_sprint3_profile_loads_with_default_keyboard(tmp_path) -> None:
     profile = ProfileStore(tmp_path).load_active()
     assert profile.keyboard.layout is Layout.QWERTY
     assert profile.keyboard.phrases == list(DEFAULT_PHRASES)
+
+
+def test_remapped_actions_survive_restart(tmp_path) -> None:
+    from gestia.gestures import Action, remap_action
+
+    store = ProfileStore(tmp_path)
+    profile = store.load_active()
+    profile.actions = remap_action(profile.actions, GestureId.SMILE, Action.LEFT_CLICK)
+    store.save(profile)
+    reopened = ProfileStore(tmp_path).load_active()
+    assert reopened.actions[GestureId.SMILE] is Action.LEFT_CLICK
+    assert reopened.actions[GestureId.MOUTH_OPEN] is Action.RIGHT_CLICK
