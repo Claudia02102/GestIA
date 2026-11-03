@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (
     QSlider,
     QSpinBox,
     QTabWidget,
-    QVBoxLayout,
     QWidget,
 )
 
@@ -29,9 +28,12 @@ from gestia.gestures import (
     GESTURES,
     MAX_SENSITIVITY,
     MIN_SENSITIVITY,
+    Action,
     GestureEvent,
     GestureFrame,
     GestureId,
+    has_left_click,
+    remap_action,
 )
 from gestia.keyboard import (
     LAYOUT_TEXT,
@@ -101,21 +103,64 @@ class GesturePanel(QTabWidget):
         grid.setRowStretch(len(GESTURES) + 2, 1)
         self.addTab(page, "Gestos")
 
-        mapping_page = QWidget()
-        mapping_layout = QVBoxLayout(mapping_page)
-        self.mapping = QListWidget()
-        mapping_layout.addWidget(QLabel("Gestos activos y acción asignada:"))
-        mapping_layout.addWidget(self.mapping)
-        mapping_layout.addWidget(
-            QLabel("La reasignación de gestos a acciones se implementa en la Épica 5.")
-        )
-        self.addTab(mapping_page, "Mapeo")
+        self.addTab(self._build_mapping_page(), "Mapeo")
 
         self.addTab(self._build_pointer_page(), "Puntero")
         self.addTab(self._build_keyboard_page(), "Teclado")
 
         self.events = QListWidget()
         self.addTab(self.events, "Eventos")
+
+    def _build_mapping_page(self) -> QWidget:
+        """P3-10: cada gesto elige su acción; el cambio se aplica al instante y se guarda."""
+        page = QWidget()
+        grid = QGridLayout(page)
+        self.action_boxes: dict[GestureId, QComboBox] = {}
+        for column, title in enumerate(("Gesto", "Acción")):
+            grid.addWidget(QLabel(f"<b>{title}</b>"), 0, column)
+        for row, gesture in enumerate(GESTURES, start=1):
+            box = QComboBox()
+            for action in Action:
+                box.addItem(ACTION_TEXT[action], str(action))
+            box.currentIndexChanged.connect(lambda _=0, g=gesture: self._action_chosen(g))
+            grid.addWidget(QLabel(GESTURES[gesture].name), row, 0)
+            grid.addWidget(box, row, 1)
+            self.action_boxes[gesture] = box
+        note = QLabel(
+            "Si elige una acción que ya usa otro gesto, ambos gestos intercambian sus "
+            "acciones. Debe quedar un gesto activo con «Clic izquierdo» (o el clic por "
+            "permanencia activado en Puntero). Los gestos desactivados se activan en la "
+            "pestaña Gestos."
+        )
+        note.setWordWrap(True)
+        grid.addWidget(note, len(GESTURES) + 1, 0, 1, 2)
+        grid.setColumnStretch(1, 1)
+        grid.setRowStretch(len(GESTURES) + 2, 1)
+        return page
+
+    def _keeps_left_click(self, actions: dict[GestureId, Action]) -> bool:
+        assert self.profile is not None
+        return self.profile.pointer.dwell_enabled or has_left_click(
+            self.profile.gestures, actions
+        )
+
+    def _action_chosen(self, gesture: GestureId) -> None:
+        if self._loading or self.profile is None:
+            return
+        action = Action(self.action_boxes[gesture].currentData())
+        mapping = remap_action(self.profile.actions, gesture, action)
+        if not self._keeps_left_click(mapping):
+            QMessageBox.warning(
+                self,
+                "Mapeo de gestos",
+                "El clic izquierdo debe quedar en un gesto activo. Asígnelo antes a otro "
+                "gesto activo o active el clic por permanencia.",
+            )
+            self.refresh()
+            return
+        self.profile.actions = mapping
+        self.refresh()
+        self.changed.emit()
 
     def _build_pointer_page(self) -> QWidget:
         page = QWidget()
@@ -357,11 +402,14 @@ class GesturePanel(QTabWidget):
             self.status[gesture].setText(text)
             for widget in (self.sliders[gesture], self.holds[gesture], self.bars[gesture]):
                 widget.setEnabled(settings.enabled)
-        self.mapping.clear()
-        for gesture, settings in self.profile.gestures.items():
-            action = self.profile.actions.get(gesture)
-            if settings.enabled and action is not None:
-                self.mapping.addItem(f"{GESTURES[gesture].name}  →  {ACTION_TEXT[action]}")
+        loading, self._loading = self._loading, True
+        try:
+            for gesture, box in self.action_boxes.items():
+                action = self.profile.actions.get(gesture)
+                box.setCurrentIndex(box.findData(str(action)) if action is not None else -1)
+                box.setEnabled(self.profile.gestures[gesture].enabled)
+        finally:
+            self._loading = loading
 
     def _update_label(self, gesture: GestureId) -> None:
         assert self.profile is not None
@@ -375,7 +423,10 @@ class GesturePanel(QTabWidget):
             return
         settings = self.profile.gestures[gesture]
         settings.enabled = enabled
-        if not enabled and not self.profile.selection_gestures():
+        if not enabled and (
+            not self.profile.selection_gestures()
+            or not self._keeps_left_click(self.profile.actions)
+        ):
             settings.enabled = True
             self._loading = True
             self.checks[gesture].setChecked(True)
@@ -383,8 +434,8 @@ class GesturePanel(QTabWidget):
             QMessageBox.warning(
                 self,
                 "Gestos de selección",
-                "Debe quedar al menos un gesto de selección activo (clic, doble clic o "
-                "arrastre). Active otro antes de desactivar este.",
+                "Debe quedar activo un gesto con clic izquierdo (o el clic por permanencia). "
+                "Reasigne el clic izquierdo en la pestaña Mapeo antes de desactivar este.",
             )
             return
         self.refresh()
