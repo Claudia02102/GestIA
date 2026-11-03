@@ -7,6 +7,8 @@ from gestia.gestures import (
     GestureSettings,
     SignalRange,
     default_gesture_settings,
+    has_left_click,
+    remap_action,
     selection_gestures,
     sensitivity_to_threshold,
 )
@@ -103,3 +105,24 @@ def test_selection_gestures_follow_enabled_flags_and_actions() -> None:
         item.enabled = False
     settings[GestureId.BROW_RAISE].enabled = True
     assert selection_gestures(settings, DEFAULT_ACTIONS) == []
+
+
+def test_remap_swaps_actions_so_none_is_repeated() -> None:
+    mapping = remap_action(DEFAULT_ACTIONS, GestureId.SMILE, Action.LEFT_CLICK)
+    assert mapping[GestureId.SMILE] is Action.LEFT_CLICK
+    assert mapping[GestureId.MOUTH_OPEN] is Action.RIGHT_CLICK
+    assert len(set(mapping.values())) == len(mapping)
+    assert DEFAULT_ACTIONS[GestureId.SMILE] is Action.RIGHT_CLICK  # el original no cambia
+
+
+def test_remap_to_same_action_keeps_mapping() -> None:
+    assert remap_action(DEFAULT_ACTIONS, GestureId.SMILE, Action.RIGHT_CLICK) == DEFAULT_ACTIONS
+
+
+def test_left_click_must_stay_on_an_enabled_gesture() -> None:
+    settings = default_gesture_settings()
+    assert has_left_click(settings, DEFAULT_ACTIONS)
+    settings[GestureId.MOUTH_OPEN].enabled = False
+    assert not has_left_click(settings, DEFAULT_ACTIONS)
+    mapping = remap_action(DEFAULT_ACTIONS, GestureId.SMILE, Action.LEFT_CLICK)
+    assert has_left_click(settings, mapping)

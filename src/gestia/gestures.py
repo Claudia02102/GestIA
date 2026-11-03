@@ -154,6 +154,35 @@ def selection_gestures(
     ]
 
 
+def remap_action(
+    actions: Mapping[GestureId, Action], gesture: GestureId, action: Action
+) -> dict[GestureId, Action]:
+    """Asigna ``action`` a ``gesture``; si otro gesto la tenía, recibe la acción anterior.
+
+    El intercambio mantiene una acción por gesto y evita que dos gestos hagan lo mismo (P3-10).
+    """
+    mapping = dict(actions)
+    previous = mapping.get(gesture)
+    for other, current in actions.items():
+        if other is not gesture and current is action:
+            if previous is None:
+                del mapping[other]
+            else:
+                mapping[other] = previous
+    mapping[gesture] = action
+    return mapping
+
+
+def has_left_click(
+    settings: Mapping[GestureId, GestureSettings], actions: Mapping[GestureId, Action]
+) -> bool:
+    """El perfil conserva un gesto activo con clic izquierdo, la acción básica de selección."""
+    return any(
+        item.enabled and actions.get(gesture) is Action.LEFT_CLICK
+        for gesture, item in settings.items()
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class GestureEvent:
     gesture: GestureId
