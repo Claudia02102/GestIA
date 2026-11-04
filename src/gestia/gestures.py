@@ -27,6 +27,7 @@ class Action(StrEnum):
     PAUSE = "pause"
     RECALIBRATE = "recalibrate"
     SCROLL = "scroll"
+    QUICK_MENU = "quick_menu"
 
 
 ACTION_TEXT = {
@@ -37,6 +38,7 @@ ACTION_TEXT = {
     Action.PAUSE: "Pausar / reanudar",
     Action.RECALIBRATE: "Recalibrar (recentrar)",
     Action.SCROLL: "Modo desplazamiento",
+    Action.QUICK_MENU: "Acciones rápidas (menú)",
 }
 SELECTION_ACTIONS = frozenset(
     {Action.LEFT_CLICK, Action.RIGHT_CLICK, Action.DOUBLE_CLICK, Action.DRAG}

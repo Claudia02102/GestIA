@@ -34,9 +34,11 @@ from gestia.gestures import GESTURES, Action
 from gestia.keyboard import PynputKeyboardBackend
 from gestia.persistence import MetricsWriter
 from gestia.profiles import Profile, ProfileStore
+from gestia.quick_actions import PynputSystemBackend
 from gestia.ui_calibration import CalibrationDialog
 from gestia.ui_keyboard import KeyboardWindow
 from gestia.ui_profile import GesturePanel
+from gestia.ui_quick_menu import QuickMenuWindow
 from gestia.ui_widgets import PointerPreview
 from gestia.worker import PipelineWorker
 
@@ -102,6 +104,7 @@ class MainWindow(QMainWindow):
         self.recenterer: Recenterer | None = None
         self.controller: PointerController | None = None
         self.keyboard: KeyboardWindow | None = None
+        self.quick_menu: QuickMenuWindow | None = None
         self.hotkeys = HotkeyBridge()
         self.hotkeys.triggered.connect(self.toggle_pause)
         self.setWindowTitle("GestIA — seguimiento facial")
@@ -169,13 +172,17 @@ class MainWindow(QMainWindow):
         self.keyboard_button.setCheckable(True)
         self.keyboard_button.setMinimumWidth(150)
         self.keyboard_button.toggled.connect(self._keyboard_toggled)
+        self.quick_menu_button = QPushButton("Acciones rápidas")
+        self.quick_menu_button.setCheckable(True)
+        self.quick_menu_button.setMinimumWidth(150)
+        self.quick_menu_button.toggled.connect(self._quick_menu_toggled)
         self.mode_label = QLabel()
         hotkey = "Ctrl+Alt+P pausa o reanuda desde cualquier aplicación."
         hotkey_label = QLabel(hotkey if self.hotkeys.active else "")
         hotkey_label.setStyleSheet("color: #64748b;")
         for widget in (
-            self.control_check, self.pause_button, self.keyboard_button, self.mode_label,
-            hotkey_label,
+            self.control_check, self.pause_button, self.keyboard_button,
+            self.quick_menu_button, self.mode_label, hotkey_label,
         ):
             control_bar.addWidget(widget)
         control_bar.addStretch()
@@ -402,6 +409,27 @@ class MainWindow(QMainWindow):
         self.wizard_offered = False
         self._load_profiles()
 
+    # --- Menú de acciones rápidas (P3-11) ------------------------------------------------
+
+    @Slot(bool)
+    def _quick_menu_toggled(self, show: bool) -> None:
+        if not show:
+            if self.quick_menu is not None:
+                self.quick_menu.hide()
+            return
+        if self.quick_menu is None:
+            try:
+                backend = PynputSystemBackend()
+            except Exception as exc:  # noqa: BLE001 - p. ej. sin servidor gráfico
+                QMessageBox.warning(
+                    self, "Acciones rápidas", f"No se puede controlar el sistema: {exc}"
+                )
+                self.quick_menu_button.setChecked(False)
+                return
+            self.quick_menu = QuickMenuWindow(backend)
+            self.quick_menu.closed.connect(lambda: self.quick_menu_button.setChecked(False))
+        self.quick_menu.show()
+
     # --- Calibración y recentrado ---------------------------------------------------------
 
     @Slot()
@@ -412,6 +440,7 @@ class MainWindow(QMainWindow):
         self.recenterer = None
         # El teclado queda siempre encima: se oculta para no tapar el asistente.
         self.keyboard_button.setChecked(False)
+        self.quick_menu_button.setChecked(False)
         gestures = [g for g in GESTURES if self.profile.gestures[g].enabled]
         self.wizard = CalibrationDialog(gestures, self.config.calibration, self)
         self.wizard.completed.connect(self._calibration_completed)
@@ -526,6 +555,10 @@ class MainWindow(QMainWindow):
             self.panel.log_event(event)
             if event.action is Action.RECALIBRATE:
                 self.start_recenter()
+            elif event.action is Action.QUICK_MENU:
+                # En pausa los gestos no actúan; solo cuenta el de reanudar.
+                if self.controller is None or not self.controller.paused:
+                    self.quick_menu_button.toggle()
             else:
                 os_events.append(event)
         if self.controller is not None:
@@ -636,4 +669,6 @@ class MainWindow(QMainWindow):
         self.hotkeys.stop()
         if self.keyboard is not None:
             self.keyboard.close()
+        if self.quick_menu is not None:
+            self.quick_menu.close()
         event.accept()

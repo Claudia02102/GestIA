@@ -126,3 +126,10 @@ def test_left_click_must_stay_on_an_enabled_gesture() -> None:
     assert not has_left_click(settings, DEFAULT_ACTIONS)
     mapping = remap_action(DEFAULT_ACTIONS, GestureId.SMILE, Action.LEFT_CLICK)
     assert has_left_click(settings, mapping)
+
+
+def test_quick_menu_can_be_assigned_to_a_gesture() -> None:
+    mapping = remap_action(DEFAULT_ACTIONS, GestureId.BROW_RAISE, Action.QUICK_MENU)
+    assert mapping[GestureId.BROW_RAISE] is Action.QUICK_MENU
+    assert list(mapping.values()).count(Action.QUICK_MENU) == 1
+    assert mapping[GestureId.MOUTH_OPEN] is Action.LEFT_CLICK

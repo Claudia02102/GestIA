@@ -153,3 +153,14 @@ def test_remapped_actions_survive_restart(tmp_path) -> None:
     reopened = ProfileStore(tmp_path).load_active()
     assert reopened.actions[GestureId.SMILE] is Action.LEFT_CLICK
     assert reopened.actions[GestureId.MOUTH_OPEN] is Action.RIGHT_CLICK
+
+
+def test_quick_menu_gesture_survives_restart(tmp_path) -> None:
+    from gestia.gestures import Action
+
+    store = ProfileStore(tmp_path)
+    profile = store.load_active()
+    profile.actions[GestureId.BROW_RAISE] = Action.QUICK_MENU
+    store.save(profile)
+    reopened = ProfileStore(tmp_path).load_active()
+    assert reopened.actions[GestureId.BROW_RAISE] is Action.QUICK_MENU
