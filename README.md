@@ -117,7 +117,7 @@ y permite iniciar de nuevo.
    distribución, tamaño, frases y permite olvidar las palabras aprendidas.
 7. **Acciones rápidas** abre un menú a la derecha de la pantalla para navegar por Windows:
    cambiar de ventana (Alt+Tab), volver atrás (Alt+←), mostrar escritorio, cerrar ventana
-   (Alt+F4, pide confirmación) y abrir Explorador, navegador, Bloc de notas o Calculadora. No
+   (pide confirmación) y abrir Explorador, navegador, Bloc de notas o Calculadora. No
    quita el foco: los atajos llegan a la aplicación activa. También se abre con un gesto si en
    **Mapeo** se le asigna «Acciones rápidas (menú)».
 8. **Nuevo perfil**, el selector y **Eliminar perfil** gestionan varias personas usuarias.

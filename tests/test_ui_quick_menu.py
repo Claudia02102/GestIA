@@ -19,6 +19,9 @@ class FakeSystem:
     def launch(self, target: str) -> None:
         self.calls.append(("launch", target))
 
+    def close_window(self) -> None:
+        self.calls.append(("close",))
+
 
 @pytest.fixture
 def menu():
@@ -43,7 +46,7 @@ def test_closing_a_window_waits_for_confirmation(menu) -> None:
     assert window.confirming and system.calls == []
     window.confirm_button.click()
     assert not window.confirming
-    assert system.calls == [("hotkey", ("alt", "f4"))]
+    assert system.calls == [("close",)]
 
 
 def test_cancel_does_not_close_the_window(menu) -> None:

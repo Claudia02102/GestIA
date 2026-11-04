@@ -1,8 +1,8 @@
 """Acciones rápidas del sistema operativo (P3-11).
 
-``run_quick_action`` traduce cada acción del menú en atajos de teclado o en abrir una
-aplicación mediante un ``SystemBackend``. El backend real usa pynput y ``os.startfile``; las
-pruebas usan uno simulado.
+``run_quick_action`` traduce cada acción del menú en atajos de teclado, en cerrar la ventana
+activa o en abrir una aplicación mediante un ``SystemBackend``. El backend real usa pynput,
+``os.startfile`` y la API de Windows; las pruebas usan uno simulado.
 """
 
 from __future__ import annotations
@@ -37,7 +37,6 @@ QUICK_ACTION_TEXT = {
 HOTKEYS: dict[QuickAction, tuple[str, ...]] = {
     QuickAction.SWITCH_WINDOW: ("alt", "tab"),
     QuickAction.BACK: ("alt", "left"),
-    QuickAction.CLOSE_WINDOW: ("alt", "f4"),
     QuickAction.SHOW_DESKTOP: ("cmd", "d"),
 }
 APPS: dict[QuickAction, str] = {
@@ -53,10 +52,13 @@ NEEDS_CONFIRMATION = frozenset({QuickAction.CLOSE_WINDOW})
 class SystemBackend(Protocol):
     def hotkey(self, *keys: str) -> None: ...
     def launch(self, target: str) -> None: ...
+    def close_window(self) -> None: ...
 
 
 def run_quick_action(action: QuickAction, backend: SystemBackend) -> None:
-    if action in HOTKEYS:
+    if action is QuickAction.CLOSE_WINDOW:
+        backend.close_window()
+    elif action in HOTKEYS:
         backend.hotkey(*HOTKEYS[action])
     else:
         backend.launch(APPS[action])
@@ -85,3 +87,20 @@ class PynputSystemBackend:
         import os
 
         os.startfile(target)  # type: ignore[attr-defined]  # solo existe en Windows
+
+    def close_window(self) -> None:
+        """Pide a la ventana activa que se cierre (WM_CLOSE), como su botón ✕.
+
+        Alt+F4 simulado no llega a todas las aplicaciones (p. ej. el Bloc de notas de
+        Windows 11). Nunca cierra una ventana de GestIA.
+        """
+        import ctypes
+        import os
+
+        wm_close = 0x0010
+        user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        hwnd = user32.GetForegroundWindow()
+        pid = ctypes.c_ulong()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if hwnd and pid.value != os.getpid():
+            user32.PostMessageW(hwnd, wm_close, 0, 0)

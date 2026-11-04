@@ -1,8 +1,8 @@
 """Menú flotante de acciones rápidas (P3-11).
 
-Como el teclado virtual, flota encima y no toma el foco: así Alt+Tab, Alt+← o Alt+F4 llegan a
-la aplicación activa y no a GestIA. Cerrar una ventana se confirma dentro del mismo menú, sin
-abrir un diálogo que robe el foco.
+Como el teclado virtual, flota encima y no toma el foco: así Alt+Tab, Alt+← o cerrar ventana
+actúan sobre la aplicación activa y no sobre GestIA. Cerrar una ventana se confirma dentro del
+mismo menú, sin abrir un diálogo que robe el foco.
 """
 
 from __future__ import annotations
