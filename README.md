@@ -122,6 +122,18 @@ y permite iniciar de nuevo.
    **Mapeo** se le asigna «Acciones rápidas (menú)».
 8. **Nuevo perfil**, el selector y **Eliminar perfil** gestionan varias personas usuarias.
    **Calibrar** repite el asistente completo para el perfil activo.
+9. **Mapeo por aplicación:** en **Mapeo**, **Añadir aplicación** da un mapeo propio a una
+   aplicación abierta (o a un ejecutable escrito, como `winword.exe`), que parte de una copia
+   del general. Al hacer un gesto se usa el mapeo de la ventana activa; una aplicación sin mapeo
+   propio, o GestIA, usa el general. En pausa, el gesto general de pausa siempre reanuda. Un
+   arrastre o desplazamiento conserva hasta terminar el mapeo con el que empezó. Las aplicaciones
+   de la Tienda de Windows pueden compartir el ejecutable `applicationframehost.exe` y, entonces,
+   también el mapeo.
+10. **Exportar** guarda el perfil activo en un archivo JSON e **Importar** lo añade en otro equipo
+    como perfil nuevo y lo activa, sin sobrescribir ninguno (si el nombre existe, añade un número).
+    Un archivo no válido muestra un error y no cambia nada. El archivo incluye calibración, frases
+    y **palabras aprendidas**: compártalo solo con quien corresponda. Con otra cámara o postura,
+    conviene **Recentrar** o **Calibrar** tras importar.
 
 Gestos y acción asignada por defecto (se puede cambiar en la pestaña **Mapeo**, HU P3-10):
 
@@ -209,7 +221,8 @@ reales: las pruebas simuladas no demuestran FPS ni robustez física. Consulte ta
 - `gestures.py`: catálogo de gestos, acciones y motor de reconocimiento (umbral por
   sensibilidad, sostenimiento, histéresis).
 - `calibration.py`: asistente de calibración, mapeo cabeza → puntero y recentrado (lógica pura).
-- `profiles.py`: perfiles JSON y su almacén.
+- `profiles.py`: perfiles JSON, su almacén, exportación e importación.
+- `app_context.py`: aplicación en primer plano y aplicaciones abiertas (API de Windows).
 - `control.py`: control del puntero (filtro One Euro, zona muerta, clics, permanencia,
   arrastre, desplazamiento, pausa) y backend pynput.
 - `keyboard.py`: teclado virtual (distribuciones, teclas especiales, atajos, frases) y backend

@@ -56,6 +56,14 @@ class PointerSettings:
     scroll_speed: int = 5
 
     def validate(self) -> None:
+        if not isinstance(self.enabled, bool) or not isinstance(self.dwell_enabled, bool):
+            raise ValueError("Los ajustes de activación deben ser verdadero o falso")
+        whole = (
+            self.smoothing, self.dead_zone_px, self.dwell_ms, self.dwell_radius_px,
+            self.scroll_speed,
+        )
+        if any(not isinstance(value, int) or isinstance(value, bool) for value in whole):
+            raise ValueError("Los ajustes del puntero deben ser números enteros")
         if not 0.5 <= self.speed <= 3.0:
             raise ValueError("La velocidad debe estar entre 0,5 y 3")
         if not 0 <= self.smoothing <= 10 or not 1 <= self.scroll_speed <= 10:

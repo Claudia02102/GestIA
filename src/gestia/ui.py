@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, QThread, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QCloseEvent, QGuiApplication, QImage, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QInputDialog,
@@ -19,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gestia.app_context import foreground_app
 from gestia.calibration import Calibration, Recenterer, RecenterStatus
 from gestia.config import AppConfig, resolve_from_project
 from gestia.control import (
@@ -30,7 +33,7 @@ from gestia.control import (
     apply_speed,
 )
 from gestia.domain import DisplayPacket, TrackingState
-from gestia.gestures import GESTURES, Action
+from gestia.gestures import GESTURES, Action, GestureEvent
 from gestia.keyboard import PynputKeyboardBackend
 from gestia.persistence import MetricsWriter
 from gestia.profiles import Profile, ProfileStore
@@ -44,6 +47,7 @@ from gestia.worker import PipelineWorker
 
 LOGGER = logging.getLogger(__name__)
 PAUSE_HOTKEY = "<ctrl>+<alt>+p"
+ACTIVE_APP_POLL_MS = 1000
 MODE_TEXT = {
     ControlMode.DISABLED: ("Cursor: control desactivado", "#64748b"),
     ControlMode.NO_FACE: ("Cursor: detenido (sin rostro)", "#ea580c"),
@@ -105,6 +109,7 @@ class MainWindow(QMainWindow):
         self.controller: PointerController | None = None
         self.keyboard: KeyboardWindow | None = None
         self.quick_menu: QuickMenuWindow | None = None
+        self.action_app: str | None = None
         self.hotkeys = HotkeyBridge()
         self.hotkeys.triggered.connect(self.toggle_pause)
         self.setWindowTitle("GestIA — seguimiento facial")
@@ -112,6 +117,11 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._load_profiles()
         self._set_state(TrackingState.STOPPED)
+        self.active_app_timer = QTimer(self)
+        self.active_app_timer.setInterval(ACTIVE_APP_POLL_MS)
+        self.active_app_timer.timeout.connect(self._show_active_app)
+        self.active_app_timer.start()
+        self._show_active_app()
 
     def _build_ui(self) -> None:
         central = QWidget()
@@ -146,6 +156,10 @@ class MainWindow(QMainWindow):
         new_profile.clicked.connect(self.create_profile)
         self.delete_button = QPushButton("Eliminar perfil")
         self.delete_button.clicked.connect(self.delete_profile)
+        export_profile = QPushButton("Exportar")
+        export_profile.clicked.connect(self.export_profile)
+        import_profile = QPushButton("Importar")
+        import_profile.clicked.connect(self.import_profile)
         self.calibrate_button = QPushButton("Calibrar")
         self.calibrate_button.setEnabled(False)
         self.calibrate_button.clicked.connect(self.open_calibration)
@@ -155,7 +169,8 @@ class MainWindow(QMainWindow):
         self.profile_status = QLabel()
         for widget in (
             QLabel("Perfil:"), self.profile_selector, new_profile, self.delete_button,
-            self.calibrate_button, self.recenter_button, self.profile_status,
+            export_profile, import_profile, self.calibrate_button, self.recenter_button,
+            self.profile_status,
         ):
             profile_bar.addWidget(widget)
         profile_bar.addStretch()
@@ -409,6 +424,65 @@ class MainWindow(QMainWindow):
         self.wizard_offered = False
         self._load_profiles()
 
+    # --- Exportar e importar (P3-17) ---------------------------------------------------------
+
+    @Slot()
+    def export_profile(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Exportar perfil", f"{self.profile.id}.json", "Perfil de GestIA (*.json)"
+        )
+        if not path:
+            return
+        try:
+            self.store.export_profile(self.profile, Path(path))
+        except OSError as exc:
+            QMessageBox.warning(self, "Exportar perfil", f"No se pudo exportar: {exc}")
+            return
+        self.panel.log_message(f"Perfil «{self.profile.name}» exportado.")
+
+    @Slot()
+    def import_profile(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Importar perfil", "", "Perfil de GestIA (*.json)"
+        )
+        if not path:
+            return
+        try:
+            profile = self.store.import_profile(Path(path))
+            self.store.set_active(profile.id)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(
+                self, "Importar perfil",
+                f"No se importó el archivo y la configuración actual no cambió.\n\n{exc}",
+            )
+            return
+        self.profile = profile
+        self.wizard_offered = False
+        self._load_profiles()
+        self.panel.log_message(f"Perfil «{profile.name}» importado.")
+
+    # --- Mapeo por aplicación (P3-16) --------------------------------------------------------
+
+    @Slot()
+    def _show_active_app(self) -> None:
+        self.panel.set_active_app(foreground_app())
+
+    def _event_for_active_app(self, event: GestureEvent) -> GestureEvent:
+        """Traduce el gesto con el mapeo de la ventana activa.
+
+        Durante un arrastre o un desplazamiento se conserva el mapeo con el que empezaron, para
+        poder terminarlos aunque el cursor pase sobre otra aplicación.
+        """
+        controller = self.controller
+        locked = controller is not None and controller.mode in (
+            ControlMode.DRAGGING, ControlMode.SCROLLING,
+        )
+        if not locked:
+            self.action_app = foreground_app()
+        paused = controller is not None and controller.paused
+        action = self.profile.action_for(event.gesture, self.action_app, paused)
+        return event if action is None else replace(event, action=action)
+
     # --- Menú de acciones rápidas (P3-11) ------------------------------------------------
 
     @Slot(bool)
@@ -552,6 +626,7 @@ class MainWindow(QMainWindow):
             return
         os_events = []
         for event in packet.gestures.events:
+            event = self._event_for_active_app(event)
             self.panel.log_event(event)
             if event.action is Action.RECALIBRATE:
                 self.start_recenter()

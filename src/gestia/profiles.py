@@ -1,4 +1,4 @@
-"""Perfiles de usuario persistidos en JSON local (HU-09 y HU-11).
+"""Perfiles de usuario persistidos en JSON local (HU-09, HU-11, P3-16 y P3-17).
 
 Un perfil guarda solo ajustes y valores escalares de calibración: nunca imágenes ni landmarks.
 """
@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import unicodedata
@@ -15,6 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from gestia.app_context import normalize_app_name
 from gestia.calibration import Calibration
 from gestia.control import PointerSettings
 from gestia.gestures import (
@@ -30,8 +32,11 @@ from gestia.gestures import (
 from gestia.keyboard import KeyboardSettings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 INDEX_FILE = "index.json"
+EXPORT_FORMAT = "gestia-profile"
+EXPORT_VERSION = 1
+MAX_IMPORT_BYTES = 5 * 1024 * 1024
 
 
 def _now() -> str:
@@ -44,6 +49,8 @@ class Profile:
     name: str
     gestures: dict[GestureId, GestureSettings] = field(default_factory=default_gesture_settings)
     actions: dict[GestureId, Action] = field(default_factory=lambda: dict(DEFAULT_ACTIONS))
+    # P3-16: mapeos propios por ejecutable («chrome.exe»); el resto de apps usa ``actions``.
+    app_actions: dict[str, dict[GestureId, Action]] = field(default_factory=dict)
     calibration: Calibration | None = None
     pointer: PointerSettings = field(default_factory=PointerSettings)
     keyboard: KeyboardSettings = field(default_factory=KeyboardSettings)
@@ -59,6 +66,23 @@ class Profile:
 
     def selection_gestures(self) -> list[GestureId]:
         return selection_gestures(self.gestures, self.actions)
+
+    def actions_for(self, app: str | None) -> dict[GestureId, Action]:
+        """Mapeo que rige en ``app``: el suyo propio o, si no tiene, el general."""
+        return {**self.actions, **self.app_actions.get(app or "", {})}
+
+    def action_for(
+        self, gesture: GestureId, app: str | None, paused: bool = False
+    ) -> Action | None:
+        """Acción de un gesto en ``app``.
+
+        En pausa rige el mapeo general (salvo que el de la app sea el de pausa): la ventana
+        activa no debe impedir reanudar con el gesto de siempre.
+        """
+        action = self.actions_for(app).get(gesture)
+        if paused and action is not Action.PAUSE:
+            return self.actions.get(gesture)
+        return action
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -76,6 +100,10 @@ class Profile:
                 for gesture, item in self.gestures.items()
             },
             "actions": {str(gesture): str(action) for gesture, action in self.actions.items()},
+            "app_actions": {
+                app: {str(gesture): str(action) for gesture, action in mapping.items()}
+                for app, mapping in self.app_actions.items()
+            },
             "calibration": None if self.calibration is None else self.calibration.to_dict(),
             "pointer": asdict(self.pointer),
             "keyboard": self.keyboard.to_dict(),
@@ -98,6 +126,11 @@ class Profile:
             actions.update(
                 {GestureId(k): Action(v) for k, v in raw.get("actions", {}).items()}
             )
+            # Los perfiles anteriores a P3-16 no tienen esta sección.
+            app_actions = {
+                normalize_app_name(app): {GestureId(k): Action(v) for k, v in mapping.items()}
+                for app, mapping in raw.get("app_actions", {}).items()
+            }
             calibration = raw.get("calibration")
             # Los perfiles del Sprint 2 no tienen esta sección: se usan los valores por defecto.
             pointer = PointerSettings(**raw.get("pointer", {}))
@@ -109,6 +142,7 @@ class Profile:
                 name=str(raw["name"]),
                 gestures=gestures,
                 actions=actions,
+                app_actions=app_actions,
                 calibration=None if calibration is None else Calibration.from_dict(calibration),
                 pointer=pointer,
                 keyboard=keyboard,
@@ -117,6 +151,50 @@ class Profile:
             )
         except (KeyError, TypeError, ValueError, AttributeError) as exc:
             raise ValueError(f"Perfil no válido: {exc}") from exc
+
+
+def _reject_constant(value: str) -> None:
+    raise ValueError(f"valor numérico no válido: {value}")
+
+
+def _finite_float(text: str) -> float:
+    value = float(text)
+    if not math.isfinite(value):
+        raise ValueError(f"valor numérico no válido: {text}")
+    return value
+
+
+def read_export(path: Path) -> dict[str, Any]:
+    """Lee y valida un archivo exportado sin modificar nada; ``ValueError`` si no es válido."""
+    if path.stat().st_size > MAX_IMPORT_BYTES:
+        raise ValueError("El archivo es demasiado grande para ser un perfil de GestIA")
+    try:
+        raw = json.loads(
+            path.read_text(encoding="utf-8"),
+            parse_constant=_reject_constant,
+            parse_float=_finite_float,
+        )
+    except RecursionError as exc:
+        raise ValueError("El archivo no es un JSON válido") from exc
+    except ValueError as exc:  # incluye JSON y codificación incorrectos
+        raise ValueError(f"El archivo no es un JSON válido: {exc}") from exc
+    if not isinstance(raw, dict) or raw.get("format") != EXPORT_FORMAT:
+        raise ValueError("El archivo no es un perfil exportado por GestIA")
+    version = raw.get("format_version")
+    if not isinstance(version, int) or not 1 <= version <= EXPORT_VERSION:
+        raise ValueError("El archivo viene de una versión de GestIA no compatible")
+    data = raw.get("profile")
+    if not isinstance(data, dict):
+        raise ValueError("El archivo no contiene un perfil")
+    name = data.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("El perfil del archivo no tiene nombre")
+    keyboard = data.get("keyboard", {})
+    if not isinstance(keyboard, dict) or not isinstance(keyboard.get("phrases", []), list):
+        raise ValueError("Perfil no válido: frases frecuentes incorrectas")
+    # El identificador lo decide quien importa: nunca se usa como ruta el que trae el archivo.
+    Profile.from_dict({**data, "id": "importado"})
+    return data
 
 
 def _slug(name: str) -> str:
@@ -167,11 +245,38 @@ class ProfileStore:
             raise ValueError("El nombre del perfil no puede estar vacío")
         if any(item.name.casefold() == name.casefold() for item in self.list()):
             raise ValueError(f"Ya existe un perfil llamado «{name}»")
+        profile = Profile(self._new_id(name), name)
+        self.save(profile)
+        return profile
+
+    def _new_id(self, name: str) -> str:
         base = profile_id = _slug(name)
         suffix = 2
         while self._path(profile_id).exists():
             profile_id, suffix = f"{base}-{suffix}", suffix + 1
-        profile = Profile(profile_id, name)
+        return profile_id
+
+    def export_profile(self, profile: Profile, path: Path) -> None:
+        """P3-17: escribe el perfil completo en un archivo para llevarlo a otro equipo."""
+        data = {
+            "format": EXPORT_FORMAT,
+            "format_version": EXPORT_VERSION,
+            "profile": profile.to_dict(),
+        }
+        self._write_json(path, data)
+
+    def import_profile(self, path: Path) -> Profile:
+        """P3-17: añade el perfil del archivo como uno nuevo; nunca sobrescribe los existentes.
+
+        Si el archivo no es válido lanza ``ValueError`` sin haber escrito nada.
+        """
+        data = read_export(path)
+        taken = {item.name.casefold() for item in self.list()}
+        base = name = data["name"].strip()
+        suffix = 2
+        while name.casefold() in taken:
+            name, suffix = f"{base} ({suffix})", suffix + 1
+        profile = Profile.from_dict({**data, "id": self._new_id(name), "name": name})
         self.save(profile)
         return profile
 
