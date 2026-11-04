@@ -115,7 +115,12 @@ y permite iniciar de nuevo.
    aplicación donde quiere escribir; las teclas se pulsan con el gesto de clic y el texto va
    a esa aplicación. **Frases** cambia a las frases frecuentes. La pestaña **Teclado** ajusta
    distribución, tamaño, frases y permite olvidar las palabras aprendidas.
-7. **Nuevo perfil**, el selector y **Eliminar perfil** gestionan varias personas usuarias.
+7. **Acciones rápidas** abre un menú a la derecha de la pantalla para navegar por Windows:
+   cambiar de ventana (Alt+Tab), volver atrás (Alt+←), mostrar escritorio, cerrar ventana
+   (Alt+F4, pide confirmación) y abrir Explorador, navegador, Bloc de notas o Calculadora. No
+   quita el foco: los atajos llegan a la aplicación activa. También se abre con un gesto si en
+   **Mapeo** se le asigna «Acciones rápidas (menú)».
+8. **Nuevo perfil**, el selector y **Eliminar perfil** gestionan varias personas usuarias.
    **Calibrar** repite el asistente completo para el perfil activo.
 
 Gestos y acción asignada por defecto (se puede cambiar en la pestaña **Mapeo**, HU P3-10):
@@ -209,9 +214,12 @@ reales: las pruebas simuladas no demuestran FPS ni robustez física. Consulte ta
   arrastre, desplazamiento, pausa) y backend pynput.
 - `keyboard.py`: teclado virtual (distribuciones, teclas especiales, atajos, frases) y backend
   pynput.
+- `quick_actions.py`: acciones rápidas del sistema (atajos de ventanas y abrir aplicaciones)
+  y backend pynput.
 - `prediction.py`, `lexicon_es.py`: predicción de palabras con diccionario local y aprendizaje.
-- `ui_calibration.py`, `ui_profile.py`, `ui_widgets.py`, `ui_keyboard.py`: asistente, panel de
-  gestos, puntero virtual y ventana del teclado.
+- `ui_calibration.py`, `ui_profile.py`, `ui_widgets.py`, `ui_keyboard.py`,
+  `ui_quick_menu.py`: asistente, panel de gestos, puntero virtual, ventana del teclado y menú de
+  acciones rápidas.
 
 Flujo de datos: `capture` → `vision` (landmarks) → `tracking` (estado) → `features` →
 `gestures` (en el hilo del worker) → `DisplayPacket` → `ui` (vista, asistente, recentrado,
