@@ -33,7 +33,7 @@ from gestia.control import (
     apply_speed,
 )
 from gestia.domain import DisplayPacket, TrackingState
-from gestia.gestures import GESTURES, Action, GestureEvent
+from gestia.gestures import GESTURES, Action, GestureEvent, positional_gesture_forming
 from gestia.keyboard import PynputKeyboardBackend
 from gestia.persistence import MetricsWriter
 from gestia.profiles import Profile, ProfileStore
@@ -677,7 +677,14 @@ class MainWindow(QMainWindow):
             else:
                 os_events.append(event)
         if self.controller is not None:
-            status = self.controller.update(pointer, os_events, packet.result.timestamp_ms)
+            hold = positional_gesture_forming(
+                packet.gestures.activations,
+                self.profile.gestures,
+                self.profile.actions_for(self.action_app),
+            )
+            status = self.controller.update(
+                pointer, os_events, packet.result.timestamp_ms, hold_position=hold
+            )
             for item in status.executed:
                 self.panel.log_message(f"Ejecutado: {item}")
             if any(event.action is Action.PAUSE for event in os_events):

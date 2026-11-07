@@ -59,8 +59,8 @@ def test_each_app_uses_its_own_mapping_and_others_use_general() -> None:
     )
     assert profile.action_for(GestureId.SMILE, "chrome.exe") is Action.DOUBLE_CLICK
     assert profile.action_for(GestureId.SMILE, "winword.exe") is Action.SCROLL
-    assert profile.action_for(GestureId.SMILE, "notepad.exe") is Action.RIGHT_CLICK
-    assert profile.action_for(GestureId.SMILE, None) is Action.RIGHT_CLICK
+    assert profile.action_for(GestureId.SMILE, "notepad.exe") is Action.DRAG
+    assert profile.action_for(GestureId.SMILE, None) is Action.DRAG
 
 
 def test_general_pause_gesture_resumes_in_any_app() -> None:
@@ -103,11 +103,12 @@ def test_panel_keeps_left_click_in_app_mapping(panel, monkeypatch) -> None:
     warnings = []
     monkeypatch.setattr(QMessageBox, "warning", lambda *args: warnings.append(args))
     panel.add_app("chrome.exe")
-    # Sonreír pasa a clic izquierdo y la boca recibe clic derecho: sigue habiendo clic activo.
+    # Sonreír pasa a clic izquierdo y el guiño recibe el arrastre: sigue habiendo clic activo.
     choose(panel, GestureId.SMILE, Action.LEFT_CLICK)
     assert not warnings
-    # El guiño está desactivado: llevarle el clic izquierdo lo dejaría sin gesto activo.
-    choose(panel, GestureId.WINK_LEFT, Action.LEFT_CLICK)
+    # Con el gesto desactivado, llevarle el clic izquierdo lo dejaría sin gesto activo.
+    panel.profile.gestures[GestureId.PUCKER].enabled = False
+    choose(panel, GestureId.PUCKER, Action.LEFT_CLICK)
     assert warnings
     assert panel.profile.app_actions["chrome.exe"][GestureId.SMILE] is Action.LEFT_CLICK
 

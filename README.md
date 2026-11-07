@@ -19,10 +19,10 @@ El Sprint 3 (Épica E3, «Control del puntero») mueve el **cursor real** del si
 | Historia | Qué incluye |
 |---|---|
 | HU-12 Cursor con la cabeza | La posición calibrada de la cabeza se lleva a la pantalla principal, llega a todos los bordes y una zona muerta evita que se mueva con la cabeza quieta. |
-| HU-13 Clic izquierdo | «Abrir la boca» hace un solo clic en la posición del cursor. |
-| HU-14 Clic derecho y doble clic | «Sonreír» → clic derecho; «Guiño izquierdo» → doble clic (gestos distintos). |
+| HU-13 Clic izquierdo | «Guiño izquierdo» hace un solo clic en la posición del cursor (P3-47). |
+| HU-14 Clic derecho y doble clic | «Guiño derecho» → clic derecho; «Abrir la boca» → doble clic (gestos distintos). |
 | HU-15 Clic por permanencia | Opcional: clic al mantener el cursor quieto el tiempo y radio configurados. |
-| HU-16 Arrastrar y soltar | «Guiño derecho» presiona; el mismo gesto (o el de clic) suelta. Si se pierde el rostro, se cancela (Esc y vuelta al origen). |
+| HU-16 Arrastrar y soltar | «Sonreír» presiona; el mismo gesto (o el de clic) suelta. Si se pierde el rostro, se cancela (Esc y vuelta al origen). |
 | HU-17 Desplazamiento | «Fruncir los labios» activa el modo: alejar la cabeza del centro desplaza vertical u horizontalmente; repetir el gesto vuelve al control normal. |
 | HU-18 Velocidad y suavizado | Velocidad (×0,5 a ×3), suavizado (filtro One Euro, 0–10) y zona muerta por perfil. |
 
@@ -144,13 +144,25 @@ Gestos y acción asignada por defecto (se puede cambiar en la pestaña **Mapeo**
 
 | Gesto | Acción | Activo por defecto |
 |---|---|---|
-| Abrir la boca | Clic izquierdo | Sí |
-| Sonreír | Clic derecho | Sí |
+| Guiño izquierdo | Clic izquierdo | Sí |
+| Guiño derecho | Clic derecho | Sí |
+| Abrir la boca | Doble clic | Sí |
+| Sonreír | Arrastrar y soltar | Sí |
 | Fruncir los labios | Modo desplazamiento | Sí |
 | Cerrar ambos ojos (≥ 800 ms) | Pausar / reanudar | Sí |
 | Levantar las cejas (≥ 1 s) | Recalibrar (recentrar) | Sí |
-| Guiño izquierdo | Doble clic | No |
-| Guiño derecho | Arrastrar y soltar | No |
+
+Desde P3-47 los clics van en los guiños: abrir la boca baja el mentón, que mueve la
+inclinación medida, y al cerrarla los labios se juntan como al fruncirlos. Además:
+
+- Mientras se forma un gesto de la boca con clic, doble clic o arrastre asignado (desde la
+  mitad de su umbral), el cursor queda **fijo** y la acción cae donde estaba. Con los guiños
+  no se fija: girar la cabeza hace que un ojo parezca más cerrado y el cursor se trabaría.
+- Durante 600 ms después de soltar un gesto de la boca, los otros gestos de la boca (sonreír,
+  fruncir los labios) no cuentan, así que cerrar la boca ya no activa el desplazamiento.
+
+Los perfiles existentes conservan su mapeo. Para usar el nuevo, pulse **Restaurar valores** y
+luego **Calibrar** (los guiños venían desactivados y no estaban calibrados).
 
 Los perfiles creados en el Sprint 2 se cargan sin problema, pero «Fruncir los labios» aparece
 *Sin calibrar*: pulse **Calibrar** una vez para incluirlo.

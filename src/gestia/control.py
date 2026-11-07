@@ -195,7 +195,9 @@ class PointerController:
         pointer: tuple[float, float] | None,
         events: Iterable[GestureEvent],
         timestamp_ms: int,
+        hold_position: bool = False,
     ) -> ControlStatus:
+        """``hold_position`` fija el cursor mientras se forma un gesto de clic (P3-47)."""
         executed: list[str] = []
         actions = [event.action for event in events]
         if Action.PAUSE in actions:
@@ -225,7 +227,10 @@ class PointerController:
 
         target = self.screen.to_pixels(*self._smooth(apply_speed(pointer, self.settings.speed),
                                                      timestamp_ms))
-        if self.position is None or math.dist(target, self.position) >= self.settings.dead_zone_px:
+        moved = self.position is None or (
+            not hold_position and math.dist(target, self.position) >= self.settings.dead_zone_px
+        )
+        if moved:
             self.position = target
             self.backend.move(*target)
         assert self.position is not None

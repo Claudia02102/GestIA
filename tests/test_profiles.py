@@ -152,7 +152,7 @@ def test_remapped_actions_survive_restart(tmp_path) -> None:
     store.save(profile)
     reopened = ProfileStore(tmp_path).load_active()
     assert reopened.actions[GestureId.SMILE] is Action.LEFT_CLICK
-    assert reopened.actions[GestureId.MOUTH_OPEN] is Action.RIGHT_CLICK
+    assert reopened.actions[GestureId.WINK_LEFT] is Action.DRAG
 
 
 def test_quick_menu_gesture_survives_restart(tmp_path) -> None:
