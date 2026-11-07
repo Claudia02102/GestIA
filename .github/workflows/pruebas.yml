@@ -1,0 +1,126 @@
+# Pruebas por fases (ciclo en V): cada fase corre solo si la anterior pasó.
+#
+#   0 Estática ─► 1 Unitarias ─► 2 Integración ─► 3 Sistema ─► 4 Complementarias
+#
+# En un push a una rama de trabajo solo corren las fases 0 y 1 (aviso rápido). En un pull
+# request hacia main, en main, cada noche y a mano corre todo: es la regresión completa que
+# decide si un sprint puede fusionarse.
+name: Pruebas por fases
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * *" # 06:17 UTC (01:17 en Lima), todos los días
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pruebas-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QT_QPA_PLATFORM: offscreen
+  PYTHONUTF8: "1"
+
+jobs:
+  estatica:
+    name: "0 · Estática (cumplimiento de estándares)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff==0.9.10
+      - name: Estilo y errores comunes
+        run: ruff check . --output-format=github
+
+  unitarias:
+    name: "1 · Unitarias (componentes, caja blanca)"
+    needs: estatica
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/preparar
+      - name: Pruebas unitarias
+        run: pytest tests/unit --junitxml=reportes/unitarias.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reporte-unitarias
+          path: reportes/
+
+  integracion:
+    name: "2 · Integración (módulos juntos, cobertura)"
+    needs: unitarias
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/preparar
+      - name: Pruebas de integración
+        run: pytest tests/integration --junitxml=reportes/integracion.xml
+      - name: Cobertura de unitarias + integración (mínimo 65 %)
+        run: >-
+          pytest tests/unit tests/integration --cov=gestia --cov-report=term-missing
+          --cov-report=xml:reportes/cobertura.xml --cov-fail-under=65
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reporte-integracion
+          path: reportes/
+
+  sistema:
+    name: "3 · Sistema y compatibilidad (${{ matrix.os }}, Python ${{ matrix.python }})"
+    needs: integracion
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        python: ["3.11", "3.12"]
+    env:
+      GESTIA_REQUIRE_MODEL: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/preparar
+        with:
+          python-version: ${{ matrix.python }}
+          modelo: "true"
+      - name: Pruebas de sistema (MediaPipe real, extremo a extremo)
+        run: pytest tests/system --junitxml=reportes/sistema.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reporte-sistema-${{ matrix.os }}-py${{ matrix.python }}
+          path: reportes/
+
+  complementarias:
+    name: "4 · Complementarias (rendimiento, estabilidad, robustez, seguridad)"
+    needs: sistema
+    runs-on: ubuntu-latest
+    env:
+      GESTIA_REQUIRE_MODEL: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/preparar
+        with:
+          modelo: "true"
+      - name: Rendimiento, estabilidad y robustez
+        run: pytest tests/complementarias --junitxml=reportes/complementarias.xml
+      - name: Seguridad de dependencias (informativa)
+        # MediaPipe 0.10.21 exige protobuf < 5, con avisos conocidos que no se pueden
+        # corregir sin cambiar de versión: se reportan sin bloquear el merge.
+        continue-on-error: true
+        run: |
+          pip install pip-audit
+          pip-audit --skip-editable --desc
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reporte-complementarias
+          path: reportes/

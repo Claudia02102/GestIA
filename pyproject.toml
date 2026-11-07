@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gestia"
-version = "0.4.0"
-description = "Control del computador con gestos faciales - Sprint 4"
+version = "0.5.0"
+description = "Control del computador con gestos faciales - Sprint 5"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = [
@@ -16,7 +16,7 @@ dependencies = [
   "pynput==1.8.1",
 ]
 [project.optional-dependencies]
-dev = ["pytest==8.3.5", "ruff==0.9.10"]
+dev = ["pytest==8.3.5", "pytest-cov==6.0.0", "ruff==0.9.10"]
 [project.scripts]
 gestia = "gestia.app:main"
 [tool.setuptools.packages.find]
@@ -24,7 +24,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"

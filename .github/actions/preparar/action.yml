@@ -1,0 +1,45 @@
+name: Preparar GestIA
+description: Instala Python, las bibliotecas del sistema que necesita Qt y el proyecto.
+
+inputs:
+  python-version:
+    description: Versión de Python
+    default: "3.12"
+  modelo:
+    description: '"true" para descargar (o recuperar de la caché) el modelo de MediaPipe'
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+        cache: pip
+        cache-dependency-path: pyproject.toml
+
+    - name: Bibliotecas de Qt sin pantalla (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update -q
+        sudo apt-get install -y -q libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+
+    - name: Instalar el proyecto
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install -e ".[dev]"
+
+    - name: Caché del modelo de MediaPipe
+      if: inputs.modelo == 'true'
+      id: cache-modelo
+      uses: actions/cache@v4
+      with:
+        path: models/face_landmarker.task
+        key: face-landmarker-float16-v1
+
+    - name: Descargar el modelo
+      if: inputs.modelo == 'true' && steps.cache-modelo.outputs.cache-hit != 'true'
+      shell: bash
+      run: python tools/download_model.py
