@@ -160,6 +160,9 @@ class MainWindow(QMainWindow):
         export_profile.clicked.connect(self.export_profile)
         import_profile = QPushButton("Importar")
         import_profile.clicked.connect(self.import_profile)
+        restore = QPushButton("Restaurar valores")
+        restore.setToolTip("Vuelve a los valores por defecto de gestos, mapeo, puntero y teclado")
+        restore.clicked.connect(self.restore_defaults)
         self.calibrate_button = QPushButton("Calibrar")
         self.calibrate_button.setEnabled(False)
         self.calibrate_button.clicked.connect(self.open_calibration)
@@ -169,7 +172,8 @@ class MainWindow(QMainWindow):
         self.profile_status = QLabel()
         for widget in (
             QLabel("Perfil:"), self.profile_selector, new_profile, self.delete_button,
-            export_profile, import_profile, self.calibrate_button, self.recenter_button,
+            export_profile, import_profile, restore, self.calibrate_button,
+            self.recenter_button,
             self.profile_status,
         ):
             profile_bar.addWidget(widget)
@@ -460,6 +464,42 @@ class MainWindow(QMainWindow):
         self.wizard_offered = False
         self._load_profiles()
         self.panel.log_message(f"Perfil «{profile.name}» importado.")
+
+    # --- Restaurar valores por defecto (P3-18) ----------------------------------------------
+
+    @Slot()
+    def restore_defaults(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            "Restaurar valores por defecto",
+            f"¿Restaurar los valores por defecto del perfil «{self.profile.name}»?\n\n"
+            "Vuelven a su valor inicial: gestos activos, sensibilidad y tiempo de cada gesto, "
+            "mapeo de acciones (se borran los mapeos por aplicación), ajustes del puntero "
+            "(incluido el control del cursor) y distribución y tamaño del teclado.\n\n"
+            "Se conservan la calibración, las frases frecuentes y las palabras aprendidas.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        if self.controller is not None:
+            # Un arrastre o desplazamiento en curso usaba el mapeo que se va a reemplazar.
+            self.controller.release_all(cancel=True)
+        self.profile.restore_defaults()
+        self._save_profile()
+        self.panel.set_profile(self.profile)
+        if self.keyboard is not None:
+            self.keyboard.set_settings(self.profile.keyboard)
+        self.panel.log_message("Valores por defecto restaurados.")
+        missing = self.profile.uncalibrated_gestures() if self.profile.calibrated else []
+        if missing:
+            names = ", ".join(GESTURES[gesture].name for gesture in missing)
+            QMessageBox.information(
+                self,
+                "Restaurar valores por defecto",
+                f"Estos gestos quedaron activos pero no están calibrados: {names}. No se "
+                "reconocerán hasta que pulse «Calibrar».",
+            )
 
     # --- Mapeo por aplicación (P3-16) --------------------------------------------------------
 

@@ -134,6 +134,11 @@ y permite iniciar de nuevo.
     Un archivo no válido muestra un error y no cambia nada. El archivo incluye calibración, frases
     y **palabras aprendidas**: compártalo solo con quien corresponda. Con otra cámara o postura,
     conviene **Recentrar** o **Calibrar** tras importar.
+11. **Restaurar valores** (P3-18) devuelve el perfil activo a los valores iniciales tras pedir
+    confirmación: gestos activos, sensibilidad y tiempo de cada gesto, mapeo general (y borra los
+    mapeos por aplicación), ajustes del puntero y distribución y tamaño del teclado. Se conservan
+    la calibración, las frases frecuentes y las palabras aprendidas. Si queda activo un gesto sin
+    calibrar, avisa que hay que pulsar **Calibrar**.
 
 Gestos y acción asignada por defecto (se puede cambiar en la pestaña **Mapeo**, HU P3-10):
 

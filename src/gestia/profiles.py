@@ -1,4 +1,4 @@
-"""Perfiles de usuario persistidos en JSON local (HU-09, HU-11, P3-16 y P3-17).
+"""Perfiles de usuario persistidos en JSON local (HU-09, HU-11, P3-16, P3-17 y P3-18).
 
 Un perfil guarda solo ajustes y valores escalares de calibración: nunca imágenes ni landmarks.
 """
@@ -66,6 +66,27 @@ class Profile:
 
     def selection_gestures(self) -> list[GestureId]:
         return selection_gestures(self.gestures, self.actions)
+
+    def uncalibrated_gestures(self) -> list[GestureId]:
+        """Gestos activados que no se reconocerán hasta calibrarlos."""
+        return [
+            gesture
+            for gesture, item in self.gestures.items()
+            if item.enabled and not self.is_gesture_calibrated(gesture)
+        ]
+
+    def restore_defaults(self) -> None:
+        """P3-18: devuelve gestos, sensibilidad, mapeo, puntero y teclado a sus valores iniciales.
+
+        Se conservan el nombre, la calibración, las frases frecuentes y las palabras aprendidas:
+        son datos de la persona, no ajustes que puedan dejar el control inservible.
+        """
+        self.gestures = default_gesture_settings()
+        self.actions = dict(DEFAULT_ACTIONS)
+        self.app_actions = {}
+        self.pointer = PointerSettings()
+        defaults = KeyboardSettings()
+        self.keyboard.layout, self.keyboard.key_size = defaults.layout, defaults.key_size
 
     def actions_for(self, app: str | None) -> dict[GestureId, Action]:
         """Mapeo que rige en ``app``: el suyo propio o, si no tiene, el general."""
