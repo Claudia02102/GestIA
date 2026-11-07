@@ -7,6 +7,8 @@ from gestia.gestures import (
     GestureSettings,
     SignalRange,
     default_gesture_settings,
+    has_left_click,
+    remap_action,
     selection_gestures,
     sensitivity_to_threshold,
 )
@@ -44,7 +46,8 @@ def test_gesture_fires_once_after_hold_and_rearms_after_release() -> None:
     engine = engine_with({GestureId.MOUTH_OPEN: GestureSettings(True, 5, 300)})
     assert run(engine, mouth(0.45), 0, 290) == []
     events = run(engine, mouth(0.45), 290, 2000)
-    assert [(e.gesture, e.action) for e in events] == [(GestureId.MOUTH_OPEN, Action.LEFT_CLICK)]
+    expected = [(GestureId.MOUTH_OPEN, DEFAULT_ACTIONS[GestureId.MOUTH_OPEN])]
+    assert [(e.gesture, e.action) for e in events] == expected
     run(engine, NEUTRAL, 2000, 2100)
     assert len(run(engine, mouth(0.45), 2100, 2500)) == 1
 
@@ -103,3 +106,31 @@ def test_selection_gestures_follow_enabled_flags_and_actions() -> None:
         item.enabled = False
     settings[GestureId.BROW_RAISE].enabled = True
     assert selection_gestures(settings, DEFAULT_ACTIONS) == []
+
+
+def test_remap_swaps_actions_so_none_is_repeated() -> None:
+    mapping = remap_action(DEFAULT_ACTIONS, GestureId.SMILE, Action.LEFT_CLICK)
+    assert mapping[GestureId.SMILE] is Action.LEFT_CLICK
+    assert mapping[GestureId.WINK_LEFT] is Action.DRAG
+    assert len(set(mapping.values())) == len(mapping)
+    assert DEFAULT_ACTIONS[GestureId.SMILE] is Action.DRAG  # el original no cambia
+
+
+def test_remap_to_same_action_keeps_mapping() -> None:
+    assert remap_action(DEFAULT_ACTIONS, GestureId.SMILE, Action.DRAG) == DEFAULT_ACTIONS
+
+
+def test_left_click_must_stay_on_an_enabled_gesture() -> None:
+    settings = default_gesture_settings()
+    assert has_left_click(settings, DEFAULT_ACTIONS)
+    settings[GestureId.WINK_LEFT].enabled = False
+    assert not has_left_click(settings, DEFAULT_ACTIONS)
+    mapping = remap_action(DEFAULT_ACTIONS, GestureId.SMILE, Action.LEFT_CLICK)
+    assert has_left_click(settings, mapping)
+
+
+def test_quick_menu_can_be_assigned_to_a_gesture() -> None:
+    mapping = remap_action(DEFAULT_ACTIONS, GestureId.BROW_RAISE, Action.QUICK_MENU)
+    assert mapping[GestureId.BROW_RAISE] is Action.QUICK_MENU
+    assert list(mapping.values()).count(Action.QUICK_MENU) == 1
+    assert mapping[GestureId.WINK_LEFT] is Action.LEFT_CLICK

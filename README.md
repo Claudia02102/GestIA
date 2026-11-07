@@ -19,10 +19,10 @@ El Sprint 3 (Épica E3, «Control del puntero») mueve el **cursor real** del si
 | Historia | Qué incluye |
 |---|---|
 | HU-12 Cursor con la cabeza | La posición calibrada de la cabeza se lleva a la pantalla principal, llega a todos los bordes y una zona muerta evita que se mueva con la cabeza quieta. |
-| HU-13 Clic izquierdo | «Abrir la boca» hace un solo clic en la posición del cursor. |
-| HU-14 Clic derecho y doble clic | «Sonreír» → clic derecho; «Guiño izquierdo» → doble clic (gestos distintos). |
+| HU-13 Clic izquierdo | «Guiño izquierdo» hace un solo clic en la posición del cursor (P3-47). |
+| HU-14 Clic derecho y doble clic | «Guiño derecho» → clic derecho; «Abrir la boca» → doble clic (gestos distintos). |
 | HU-15 Clic por permanencia | Opcional: clic al mantener el cursor quieto el tiempo y radio configurados. |
-| HU-16 Arrastrar y soltar | «Guiño derecho» presiona; el mismo gesto (o el de clic) suelta. Si se pierde el rostro, se cancela (Esc y vuelta al origen). |
+| HU-16 Arrastrar y soltar | «Sonreír» presiona; el mismo gesto (o el de clic) suelta. Si se pierde el rostro, se cancela (Esc y vuelta al origen). |
 | HU-17 Desplazamiento | «Fruncir los labios» activa el modo: alejar la cabeza del centro desplaza vertical u horizontalmente; repetir el gesto vuelve al control normal. |
 | HU-18 Velocidad y suavizado | Velocidad (×0,5 a ×3), suavizado (filtro One Euro, 0–10) y zona muerta por perfil. |
 
@@ -100,8 +100,11 @@ y permite iniciar de nuevo.
    - En la verificación final hay que llevar el puntero virtual a las cuatro esquinas. Si no
      se logra en 30 s, se repite solo el rango de cabeza.
 3. En la pestaña **Gestos** puede activar/desactivar gestos, cambiar sensibilidad y tiempo de
-   sostenimiento; la barra muestra en vivo la intensidad del gesto. **Mapeo** lista los gestos
-   activos con su acción y **Eventos** registra los gestos reconocidos.
+   sostenimiento; la barra muestra en vivo la intensidad del gesto. En **Mapeo** cada gesto
+   elige su acción en un desplegable: el cambio se aplica al instante y se guarda en el perfil.
+   Si la acción ya la usa otro gesto, ambos intercambian sus acciones, y siempre debe quedar un
+   gesto activo con clic izquierdo (o el clic por permanencia). **Eventos** registra los gestos
+   reconocidos.
 4. Con **Controlar el cursor del sistema** marcado (por defecto), el cursor sigue la cabeza
    en cuanto el perfil está calibrado. Para que quien asiste recupere el ratón: desmarque la
    casilla, pulse **Ctrl+Alt+P** o cierre los ojos ~1 s. La pestaña **Puntero** ajusta
@@ -112,20 +115,54 @@ y permite iniciar de nuevo.
    aplicación donde quiere escribir; las teclas se pulsan con el gesto de clic y el texto va
    a esa aplicación. **Frases** cambia a las frases frecuentes. La pestaña **Teclado** ajusta
    distribución, tamaño, frases y permite olvidar las palabras aprendidas.
-7. **Nuevo perfil**, el selector y **Eliminar perfil** gestionan varias personas usuarias.
+7. **Acciones rápidas** abre un menú a la derecha de la pantalla para navegar por Windows:
+   cambiar de ventana (Alt+Tab), volver atrás (Alt+←), mostrar escritorio, cerrar ventana
+   (pide confirmación) y abrir Explorador, navegador, Bloc de notas o Calculadora. No
+   quita el foco: los atajos llegan a la aplicación activa. También se abre con un gesto si en
+   **Mapeo** se le asigna «Acciones rápidas (menú)».
+8. **Nuevo perfil**, el selector y **Eliminar perfil** gestionan varias personas usuarias.
    **Calibrar** repite el asistente completo para el perfil activo.
+9. **Mapeo por aplicación:** en **Mapeo**, **Añadir aplicación** da un mapeo propio a una
+   aplicación abierta (o a un ejecutable escrito, como `winword.exe`), que parte de una copia
+   del general. Al hacer un gesto se usa el mapeo de la ventana activa; una aplicación sin mapeo
+   propio, o GestIA, usa el general. En pausa, el gesto general de pausa siempre reanuda. Un
+   arrastre o desplazamiento conserva hasta terminar el mapeo con el que empezó. Las aplicaciones
+   de la Tienda de Windows pueden compartir el ejecutable `applicationframehost.exe` y, entonces,
+   también el mapeo.
+10. **Exportar** guarda el perfil activo en un archivo JSON e **Importar** lo añade en otro equipo
+    como perfil nuevo y lo activa, sin sobrescribir ninguno (si el nombre existe, añade un número).
+    Un archivo no válido muestra un error y no cambia nada. El archivo incluye calibración, frases
+    y **palabras aprendidas**: compártalo solo con quien corresponda. Con otra cámara o postura,
+    conviene **Recentrar** o **Calibrar** tras importar.
+11. **Restaurar valores** (P3-18) devuelve el perfil activo a los valores iniciales tras pedir
+    confirmación: gestos activos, sensibilidad y tiempo de cada gesto, mapeo general (y borra los
+    mapeos por aplicación), ajustes del puntero y distribución y tamaño del teclado. Se conservan
+    la calibración, las frases frecuentes y las palabras aprendidas. Si queda activo un gesto sin
+    calibrar, avisa que hay que pulsar **Calibrar**.
 
-Gestos y acción asignada por defecto (la reasignación es la Épica E5):
+Gestos y acción asignada por defecto (se puede cambiar en la pestaña **Mapeo**, HU P3-10):
 
 | Gesto | Acción | Activo por defecto |
 |---|---|---|
-| Abrir la boca | Clic izquierdo | Sí |
-| Sonreír | Clic derecho | Sí |
+| Guiño izquierdo | Clic izquierdo | Sí |
+| Guiño derecho | Clic derecho | Sí |
+| Abrir la boca | Doble clic | Sí |
+| Sonreír | Arrastrar y soltar | Sí |
 | Fruncir los labios | Modo desplazamiento | Sí |
 | Cerrar ambos ojos (≥ 800 ms) | Pausar / reanudar | Sí |
 | Levantar las cejas (≥ 1 s) | Recalibrar (recentrar) | Sí |
-| Guiño izquierdo | Doble clic | No |
-| Guiño derecho | Arrastrar y soltar | No |
+
+Desde P3-47 los clics van en los guiños: abrir la boca baja el mentón, que mueve la
+inclinación medida, y al cerrarla los labios se juntan como al fruncirlos. Además:
+
+- Mientras se forma un gesto de la boca con clic, doble clic o arrastre asignado (desde la
+  mitad de su umbral), el cursor queda **fijo** y la acción cae donde estaba. Con los guiños
+  no se fija: girar la cabeza hace que un ojo parezca más cerrado y el cursor se trabaría.
+- Durante 600 ms después de soltar un gesto de la boca, los otros gestos de la boca (sonreír,
+  fruncir los labios) no cuentan, así que cerrar la boca ya no activa el desplazamiento.
+
+Los perfiles existentes conservan su mapeo. Para usar el nuevo, pulse **Restaurar valores** y
+luego **Calibrar** (los guiños venían desactivados y no estaban calibrados).
 
 Los perfiles creados en el Sprint 2 se cargan sin problema, pero «Fruncir los labios» aparece
 *Sin calibrar*: pulse **Calibrar** una vez para incluirlo.
@@ -201,14 +238,18 @@ reales: las pruebas simuladas no demuestran FPS ni robustez física. Consulte ta
 - `gestures.py`: catálogo de gestos, acciones y motor de reconocimiento (umbral por
   sensibilidad, sostenimiento, histéresis).
 - `calibration.py`: asistente de calibración, mapeo cabeza → puntero y recentrado (lógica pura).
-- `profiles.py`: perfiles JSON y su almacén.
+- `profiles.py`: perfiles JSON, su almacén, exportación e importación.
+- `app_context.py`: aplicación en primer plano y aplicaciones abiertas (API de Windows).
 - `control.py`: control del puntero (filtro One Euro, zona muerta, clics, permanencia,
   arrastre, desplazamiento, pausa) y backend pynput.
 - `keyboard.py`: teclado virtual (distribuciones, teclas especiales, atajos, frases) y backend
   pynput.
+- `quick_actions.py`: acciones rápidas del sistema (atajos de ventanas y abrir aplicaciones)
+  y backend pynput.
 - `prediction.py`, `lexicon_es.py`: predicción de palabras con diccionario local y aprendizaje.
-- `ui_calibration.py`, `ui_profile.py`, `ui_widgets.py`, `ui_keyboard.py`: asistente, panel de
-  gestos, puntero virtual y ventana del teclado.
+- `ui_calibration.py`, `ui_profile.py`, `ui_widgets.py`, `ui_keyboard.py`,
+  `ui_quick_menu.py`: asistente, panel de gestos, puntero virtual, ventana del teclado y menú de
+  acciones rápidas.
 
 Flujo de datos: `capture` → `vision` (landmarks) → `tracking` (estado) → `features` →
 `gestures` (en el hilo del worker) → `DisplayPacket` → `ui` (vista, asistente, recentrado,

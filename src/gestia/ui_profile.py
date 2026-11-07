@@ -1,4 +1,4 @@
-"""Panel del perfil: gestos (HU-07, HU-08), puntero, teclado (HU-22, HU-23), mapeo y eventos."""
+"""Panel del perfil: gestos, puntero, teclado, mapeo general y por aplicación, y eventos."""
 
 from __future__ import annotations
 
@@ -20,18 +20,21 @@ from PySide6.QtWidgets import (
     QSlider,
     QSpinBox,
     QTabWidget,
-    QVBoxLayout,
     QWidget,
 )
 
+from gestia.app_context import normalize_app_name, open_apps
 from gestia.gestures import (
     ACTION_TEXT,
     GESTURES,
     MAX_SENSITIVITY,
     MIN_SENSITIVITY,
+    Action,
     GestureEvent,
     GestureFrame,
     GestureId,
+    has_left_click,
+    remap_action,
 )
 from gestia.keyboard import (
     LAYOUT_TEXT,
@@ -101,21 +104,162 @@ class GesturePanel(QTabWidget):
         grid.setRowStretch(len(GESTURES) + 2, 1)
         self.addTab(page, "Gestos")
 
-        mapping_page = QWidget()
-        mapping_layout = QVBoxLayout(mapping_page)
-        self.mapping = QListWidget()
-        mapping_layout.addWidget(QLabel("Gestos activos y acción asignada:"))
-        mapping_layout.addWidget(self.mapping)
-        mapping_layout.addWidget(
-            QLabel("La reasignación de gestos a acciones se implementa en la Épica 5.")
-        )
-        self.addTab(mapping_page, "Mapeo")
+        self.addTab(self._build_mapping_page(), "Mapeo")
 
         self.addTab(self._build_pointer_page(), "Puntero")
         self.addTab(self._build_keyboard_page(), "Teclado")
 
         self.events = QListWidget()
         self.addTab(self.events, "Eventos")
+
+    def _build_mapping_page(self) -> QWidget:
+        """P3-10: cada gesto elige su acción; el cambio se aplica al instante y se guarda."""
+        page = QWidget()
+        grid = QGridLayout(page)
+        self.action_boxes: dict[GestureId, QComboBox] = {}
+        # P3-16: se edita el mapeo general o el propio de una aplicación.
+        apps = QHBoxLayout()
+        self.app_selector = QComboBox()
+        self.app_selector.setMinimumWidth(170)
+        self.app_selector.currentIndexChanged.connect(self._app_selected)
+        add_app = QPushButton("Añadir aplicación")
+        add_app.clicked.connect(self._ask_app)
+        self.remove_app_button = QPushButton("Quitar")
+        self.remove_app_button.clicked.connect(self._remove_app)
+        apps.addWidget(QLabel("Mapeo para:"))
+        apps.addWidget(self.app_selector, 1)
+        apps.addWidget(add_app)
+        apps.addWidget(self.remove_app_button)
+        grid.addLayout(apps, 0, 0, 1, 2)
+        self.active_app_label = QLabel()
+        grid.addWidget(self.active_app_label, 1, 0, 1, 2)
+        for column, title in enumerate(("Gesto", "Acción")):
+            grid.addWidget(QLabel(f"<b>{title}</b>"), 2, column)
+        for row, gesture in enumerate(GESTURES, start=3):
+            box = QComboBox()
+            for action in Action:
+                box.addItem(ACTION_TEXT[action], str(action))
+            box.currentIndexChanged.connect(lambda _=0, g=gesture: self._action_chosen(g))
+            grid.addWidget(QLabel(GESTURES[gesture].name), row, 0)
+            grid.addWidget(box, row, 1)
+            self.action_boxes[gesture] = box
+        note = QLabel(
+            "Si elige una acción que ya usa otro gesto, ambos gestos intercambian sus "
+            "acciones. Debe quedar un gesto activo con «Clic izquierdo» (o el clic por "
+            "permanencia activado en Puntero). Los gestos desactivados se activan en la "
+            "pestaña Gestos. Una aplicación sin mapeo propio usa el general; el mapeo se elige "
+            "según la ventana activa al hacer el gesto."
+        )
+        note.setWordWrap(True)
+        grid.addWidget(note, len(GESTURES) + 3, 0, 1, 2)
+        grid.setColumnStretch(1, 1)
+        grid.setRowStretch(len(GESTURES) + 4, 1)
+        return page
+
+    @property
+    def selected_app(self) -> str | None:
+        """Aplicación cuyo mapeo se está editando; ``None`` es el mapeo general."""
+        return self.app_selector.currentData()
+
+    def _edited_actions(self) -> dict[GestureId, Action]:
+        assert self.profile is not None
+        app = self.selected_app
+        return self.profile.actions if app is None else self.profile.app_actions[app]
+
+    def _load_apps(self, selected: str | None = None) -> None:
+        assert self.profile is not None
+        loading, self._loading = self._loading, True
+        try:
+            self.app_selector.clear()
+            self.app_selector.addItem("General (todas las aplicaciones)", None)
+            for app in sorted(self.profile.app_actions):
+                self.app_selector.addItem(app, app)
+            self.app_selector.setCurrentIndex(max(0, self.app_selector.findData(selected)))
+        finally:
+            self._loading = loading
+
+    def _app_selected(self) -> None:
+        if not self._loading:
+            self.refresh()
+
+    def add_app(self, text: str) -> None:
+        """Da a la aplicación un mapeo propio, que parte de una copia del general."""
+        if self.profile is None:
+            return
+        app = normalize_app_name(text)
+        if app not in self.profile.app_actions:
+            self.profile.app_actions[app] = dict(self.profile.actions)
+            self.changed.emit()
+        self._load_apps(app)
+        self.refresh()
+
+    def _ask_app(self) -> None:
+        text, ok = QInputDialog.getItem(
+            self, "Añadir aplicación",
+            "Elija una aplicación abierta o escriba su ejecutable (p. ej., winword.exe):",
+            open_apps(), 0, True,
+        )
+        if not ok or not text.strip():
+            return
+        try:
+            self.add_app(text)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Mapeo por aplicación", str(exc))
+
+    def _remove_app(self) -> None:
+        app = self.selected_app
+        if self.profile is None or app is None:
+            return
+        answer = QMessageBox.question(
+            self, "Mapeo por aplicación",
+            f"¿Quitar el mapeo de {app}? Esa aplicación pasará a usar el general.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            del self.profile.app_actions[app]
+            self._load_apps()
+            self.refresh()
+            self.changed.emit()
+
+    def set_active_app(self, app: str | None) -> None:
+        if self.profile is None:
+            return
+        if app is None:
+            text = "Ventana activa: GestIA o desconocida (mapeo general)"
+        elif app in self.profile.app_actions:
+            text = f"Ventana activa: {app} (mapeo propio)"
+        else:
+            text = f"Ventana activa: {app} (mapeo general)"
+        self.active_app_label.setText(text)
+
+    def _keeps_left_click(self, actions: dict[GestureId, Action]) -> bool:
+        assert self.profile is not None
+        return self.profile.pointer.dwell_enabled or has_left_click(
+            self.profile.gestures, actions
+        )
+
+    def _action_chosen(self, gesture: GestureId) -> None:
+        if self._loading or self.profile is None:
+            return
+        action = Action(self.action_boxes[gesture].currentData())
+        mapping = remap_action(self._edited_actions(), gesture, action)
+        if not self._keeps_left_click(mapping):
+            QMessageBox.warning(
+                self,
+                "Mapeo de gestos",
+                "El clic izquierdo debe quedar en un gesto activo. Asígnelo antes a otro "
+                "gesto activo o active el clic por permanencia.",
+            )
+            self.refresh()
+            return
+        app = self.selected_app
+        if app is None:
+            self.profile.actions = mapping
+        else:
+            self.profile.app_actions[app] = mapping
+        self.refresh()
+        self.changed.emit()
 
     def _build_pointer_page(self) -> QWidget:
         page = QWidget()
@@ -340,6 +484,7 @@ class GesturePanel(QTabWidget):
             self.scroll_speed.setValue(pointer.scroll_speed)
             self._pointer_labels()
             self._load_keyboard()
+            self._load_apps()
         finally:
             self._loading = False
         self.refresh()
@@ -357,11 +502,16 @@ class GesturePanel(QTabWidget):
             self.status[gesture].setText(text)
             for widget in (self.sliders[gesture], self.holds[gesture], self.bars[gesture]):
                 widget.setEnabled(settings.enabled)
-        self.mapping.clear()
-        for gesture, settings in self.profile.gestures.items():
-            action = self.profile.actions.get(gesture)
-            if settings.enabled and action is not None:
-                self.mapping.addItem(f"{GESTURES[gesture].name}  →  {ACTION_TEXT[action]}")
+        self.remove_app_button.setEnabled(self.selected_app is not None)
+        loading, self._loading = self._loading, True
+        try:
+            actions = self._edited_actions()
+            for gesture, box in self.action_boxes.items():
+                action = actions.get(gesture)
+                box.setCurrentIndex(box.findData(str(action)) if action is not None else -1)
+                box.setEnabled(self.profile.gestures[gesture].enabled)
+        finally:
+            self._loading = loading
 
     def _update_label(self, gesture: GestureId) -> None:
         assert self.profile is not None
@@ -375,7 +525,13 @@ class GesturePanel(QTabWidget):
             return
         settings = self.profile.gestures[gesture]
         settings.enabled = enabled
-        if not enabled and not self.profile.selection_gestures():
+        if not enabled and (
+            not self.profile.selection_gestures()
+            or not all(
+                self._keeps_left_click(mapping)
+                for mapping in (self.profile.actions, *self.profile.app_actions.values())
+            )
+        ):
             settings.enabled = True
             self._loading = True
             self.checks[gesture].setChecked(True)
@@ -383,8 +539,9 @@ class GesturePanel(QTabWidget):
             QMessageBox.warning(
                 self,
                 "Gestos de selección",
-                "Debe quedar al menos un gesto de selección activo (clic, doble clic o "
-                "arrastre). Active otro antes de desactivar este.",
+                "Debe quedar activo un gesto con clic izquierdo (o el clic por permanencia), "
+                "también en cada mapeo por aplicación. Reasigne el clic izquierdo en la pestaña "
+                "Mapeo antes de desactivar este.",
             )
             return
         self.refresh()

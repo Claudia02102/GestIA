@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, QThread, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QCloseEvent, QGuiApplication, QImage, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QInputDialog,
@@ -19,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gestia.app_context import foreground_app
 from gestia.calibration import Calibration, Recenterer, RecenterStatus
 from gestia.config import AppConfig, resolve_from_project
 from gestia.control import (
@@ -30,18 +33,21 @@ from gestia.control import (
     apply_speed,
 )
 from gestia.domain import DisplayPacket, TrackingState
-from gestia.gestures import GESTURES, Action
+from gestia.gestures import GESTURES, Action, GestureEvent, positional_gesture_forming
 from gestia.keyboard import PynputKeyboardBackend
 from gestia.persistence import MetricsWriter
 from gestia.profiles import Profile, ProfileStore
+from gestia.quick_actions import PynputSystemBackend
 from gestia.ui_calibration import CalibrationDialog
 from gestia.ui_keyboard import KeyboardWindow
 from gestia.ui_profile import GesturePanel
+from gestia.ui_quick_menu import QuickMenuWindow
 from gestia.ui_widgets import PointerPreview
 from gestia.worker import PipelineWorker
 
 LOGGER = logging.getLogger(__name__)
 PAUSE_HOTKEY = "<ctrl>+<alt>+p"
+ACTIVE_APP_POLL_MS = 1000
 MODE_TEXT = {
     ControlMode.DISABLED: ("Cursor: control desactivado", "#64748b"),
     ControlMode.NO_FACE: ("Cursor: detenido (sin rostro)", "#ea580c"),
@@ -102,6 +108,8 @@ class MainWindow(QMainWindow):
         self.recenterer: Recenterer | None = None
         self.controller: PointerController | None = None
         self.keyboard: KeyboardWindow | None = None
+        self.quick_menu: QuickMenuWindow | None = None
+        self.action_app: str | None = None
         self.hotkeys = HotkeyBridge()
         self.hotkeys.triggered.connect(self.toggle_pause)
         self.setWindowTitle("GestIA — seguimiento facial")
@@ -109,6 +117,11 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._load_profiles()
         self._set_state(TrackingState.STOPPED)
+        self.active_app_timer = QTimer(self)
+        self.active_app_timer.setInterval(ACTIVE_APP_POLL_MS)
+        self.active_app_timer.timeout.connect(self._show_active_app)
+        self.active_app_timer.start()
+        self._show_active_app()
 
     def _build_ui(self) -> None:
         central = QWidget()
@@ -143,6 +156,13 @@ class MainWindow(QMainWindow):
         new_profile.clicked.connect(self.create_profile)
         self.delete_button = QPushButton("Eliminar perfil")
         self.delete_button.clicked.connect(self.delete_profile)
+        export_profile = QPushButton("Exportar")
+        export_profile.clicked.connect(self.export_profile)
+        import_profile = QPushButton("Importar")
+        import_profile.clicked.connect(self.import_profile)
+        restore = QPushButton("Restaurar valores")
+        restore.setToolTip("Vuelve a los valores por defecto de gestos, mapeo, puntero y teclado")
+        restore.clicked.connect(self.restore_defaults)
         self.calibrate_button = QPushButton("Calibrar")
         self.calibrate_button.setEnabled(False)
         self.calibrate_button.clicked.connect(self.open_calibration)
@@ -152,7 +172,9 @@ class MainWindow(QMainWindow):
         self.profile_status = QLabel()
         for widget in (
             QLabel("Perfil:"), self.profile_selector, new_profile, self.delete_button,
-            self.calibrate_button, self.recenter_button, self.profile_status,
+            export_profile, import_profile, restore, self.calibrate_button,
+            self.recenter_button,
+            self.profile_status,
         ):
             profile_bar.addWidget(widget)
         profile_bar.addStretch()
@@ -169,13 +191,17 @@ class MainWindow(QMainWindow):
         self.keyboard_button.setCheckable(True)
         self.keyboard_button.setMinimumWidth(150)
         self.keyboard_button.toggled.connect(self._keyboard_toggled)
+        self.quick_menu_button = QPushButton("Acciones rápidas")
+        self.quick_menu_button.setCheckable(True)
+        self.quick_menu_button.setMinimumWidth(150)
+        self.quick_menu_button.toggled.connect(self._quick_menu_toggled)
         self.mode_label = QLabel()
         hotkey = "Ctrl+Alt+P pausa o reanuda desde cualquier aplicación."
         hotkey_label = QLabel(hotkey if self.hotkeys.active else "")
         hotkey_label.setStyleSheet("color: #64748b;")
         for widget in (
-            self.control_check, self.pause_button, self.keyboard_button, self.mode_label,
-            hotkey_label,
+            self.control_check, self.pause_button, self.keyboard_button,
+            self.quick_menu_button, self.mode_label, hotkey_label,
         ):
             control_bar.addWidget(widget)
         control_bar.addStretch()
@@ -402,6 +428,122 @@ class MainWindow(QMainWindow):
         self.wizard_offered = False
         self._load_profiles()
 
+    # --- Exportar e importar (P3-17) ---------------------------------------------------------
+
+    @Slot()
+    def export_profile(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Exportar perfil", f"{self.profile.id}.json", "Perfil de GestIA (*.json)"
+        )
+        if not path:
+            return
+        try:
+            self.store.export_profile(self.profile, Path(path))
+        except OSError as exc:
+            QMessageBox.warning(self, "Exportar perfil", f"No se pudo exportar: {exc}")
+            return
+        self.panel.log_message(f"Perfil «{self.profile.name}» exportado.")
+
+    @Slot()
+    def import_profile(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Importar perfil", "", "Perfil de GestIA (*.json)"
+        )
+        if not path:
+            return
+        try:
+            profile = self.store.import_profile(Path(path))
+            self.store.set_active(profile.id)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(
+                self, "Importar perfil",
+                f"No se importó el archivo y la configuración actual no cambió.\n\n{exc}",
+            )
+            return
+        self.profile = profile
+        self.wizard_offered = False
+        self._load_profiles()
+        self.panel.log_message(f"Perfil «{profile.name}» importado.")
+
+    # --- Restaurar valores por defecto (P3-18) ----------------------------------------------
+
+    @Slot()
+    def restore_defaults(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            "Restaurar valores por defecto",
+            f"¿Restaurar los valores por defecto del perfil «{self.profile.name}»?\n\n"
+            "Vuelven a su valor inicial: gestos activos, sensibilidad y tiempo de cada gesto, "
+            "mapeo de acciones (se borran los mapeos por aplicación), ajustes del puntero "
+            "(incluido el control del cursor) y distribución y tamaño del teclado.\n\n"
+            "Se conservan la calibración, las frases frecuentes y las palabras aprendidas.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        if self.controller is not None:
+            # Un arrastre o desplazamiento en curso usaba el mapeo que se va a reemplazar.
+            self.controller.release_all(cancel=True)
+        self.profile.restore_defaults()
+        self._save_profile()
+        self.panel.set_profile(self.profile)
+        if self.keyboard is not None:
+            self.keyboard.set_settings(self.profile.keyboard)
+        self.panel.log_message("Valores por defecto restaurados.")
+        missing = self.profile.uncalibrated_gestures() if self.profile.calibrated else []
+        if missing:
+            names = ", ".join(GESTURES[gesture].name for gesture in missing)
+            QMessageBox.information(
+                self,
+                "Restaurar valores por defecto",
+                f"Estos gestos quedaron activos pero no están calibrados: {names}. No se "
+                "reconocerán hasta que pulse «Calibrar».",
+            )
+
+    # --- Mapeo por aplicación (P3-16) --------------------------------------------------------
+
+    @Slot()
+    def _show_active_app(self) -> None:
+        self.panel.set_active_app(foreground_app())
+
+    def _event_for_active_app(self, event: GestureEvent) -> GestureEvent:
+        """Traduce el gesto con el mapeo de la ventana activa.
+
+        Durante un arrastre o un desplazamiento se conserva el mapeo con el que empezaron, para
+        poder terminarlos aunque el cursor pase sobre otra aplicación.
+        """
+        controller = self.controller
+        locked = controller is not None and controller.mode in (
+            ControlMode.DRAGGING, ControlMode.SCROLLING,
+        )
+        if not locked:
+            self.action_app = foreground_app()
+        paused = controller is not None and controller.paused
+        action = self.profile.action_for(event.gesture, self.action_app, paused)
+        return event if action is None else replace(event, action=action)
+
+    # --- Menú de acciones rápidas (P3-11) ------------------------------------------------
+
+    @Slot(bool)
+    def _quick_menu_toggled(self, show: bool) -> None:
+        if not show:
+            if self.quick_menu is not None:
+                self.quick_menu.hide()
+            return
+        if self.quick_menu is None:
+            try:
+                backend = PynputSystemBackend()
+            except Exception as exc:  # noqa: BLE001 - p. ej. sin servidor gráfico
+                QMessageBox.warning(
+                    self, "Acciones rápidas", f"No se puede controlar el sistema: {exc}"
+                )
+                self.quick_menu_button.setChecked(False)
+                return
+            self.quick_menu = QuickMenuWindow(backend)
+            self.quick_menu.closed.connect(lambda: self.quick_menu_button.setChecked(False))
+        self.quick_menu.show()
+
     # --- Calibración y recentrado ---------------------------------------------------------
 
     @Slot()
@@ -412,6 +554,7 @@ class MainWindow(QMainWindow):
         self.recenterer = None
         # El teclado queda siempre encima: se oculta para no tapar el asistente.
         self.keyboard_button.setChecked(False)
+        self.quick_menu_button.setChecked(False)
         gestures = [g for g in GESTURES if self.profile.gestures[g].enabled]
         self.wizard = CalibrationDialog(gestures, self.config.calibration, self)
         self.wizard.completed.connect(self._calibration_completed)
@@ -523,13 +666,25 @@ class MainWindow(QMainWindow):
             return
         os_events = []
         for event in packet.gestures.events:
+            event = self._event_for_active_app(event)
             self.panel.log_event(event)
             if event.action is Action.RECALIBRATE:
                 self.start_recenter()
+            elif event.action is Action.QUICK_MENU:
+                # En pausa los gestos no actúan; solo cuenta el de reanudar.
+                if self.controller is None or not self.controller.paused:
+                    self.quick_menu_button.toggle()
             else:
                 os_events.append(event)
         if self.controller is not None:
-            status = self.controller.update(pointer, os_events, packet.result.timestamp_ms)
+            hold = positional_gesture_forming(
+                packet.gestures.activations,
+                self.profile.gestures,
+                self.profile.actions_for(self.action_app),
+            )
+            status = self.controller.update(
+                pointer, os_events, packet.result.timestamp_ms, hold_position=hold
+            )
             for item in status.executed:
                 self.panel.log_message(f"Ejecutado: {item}")
             if any(event.action is Action.PAUSE for event in os_events):
@@ -636,4 +791,6 @@ class MainWindow(QMainWindow):
         self.hotkeys.stop()
         if self.keyboard is not None:
             self.keyboard.close()
+        if self.quick_menu is not None:
+            self.quick_menu.close()
         event.accept()

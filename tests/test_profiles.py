@@ -87,7 +87,7 @@ def test_profile_file_contains_no_images_or_landmarks(tmp_path) -> None:
     raw = json.loads((tmp_path / f"{profile.id}.json").read_text(encoding="utf-8"))
     assert set(raw) == {
         "schema_version", "id", "name", "created_at", "updated_at", "gestures", "actions",
-        "calibration", "pointer", "keyboard",
+        "app_actions", "calibration", "pointer", "keyboard",
     }
     assert "landmarks" not in json.dumps(raw)
 
@@ -141,3 +141,26 @@ def test_sprint3_profile_loads_with_default_keyboard(tmp_path) -> None:
     profile = ProfileStore(tmp_path).load_active()
     assert profile.keyboard.layout is Layout.QWERTY
     assert profile.keyboard.phrases == list(DEFAULT_PHRASES)
+
+
+def test_remapped_actions_survive_restart(tmp_path) -> None:
+    from gestia.gestures import Action, remap_action
+
+    store = ProfileStore(tmp_path)
+    profile = store.load_active()
+    profile.actions = remap_action(profile.actions, GestureId.SMILE, Action.LEFT_CLICK)
+    store.save(profile)
+    reopened = ProfileStore(tmp_path).load_active()
+    assert reopened.actions[GestureId.SMILE] is Action.LEFT_CLICK
+    assert reopened.actions[GestureId.WINK_LEFT] is Action.DRAG
+
+
+def test_quick_menu_gesture_survives_restart(tmp_path) -> None:
+    from gestia.gestures import Action
+
+    store = ProfileStore(tmp_path)
+    profile = store.load_active()
+    profile.actions[GestureId.BROW_RAISE] = Action.QUICK_MENU
+    store.save(profile)
+    reopened = ProfileStore(tmp_path).load_active()
+    assert reopened.actions[GestureId.BROW_RAISE] is Action.QUICK_MENU

@@ -56,6 +56,14 @@ class PointerSettings:
     scroll_speed: int = 5
 
     def validate(self) -> None:
+        if not isinstance(self.enabled, bool) or not isinstance(self.dwell_enabled, bool):
+            raise ValueError("Los ajustes de activación deben ser verdadero o falso")
+        whole = (
+            self.smoothing, self.dead_zone_px, self.dwell_ms, self.dwell_radius_px,
+            self.scroll_speed,
+        )
+        if any(not isinstance(value, int) or isinstance(value, bool) for value in whole):
+            raise ValueError("Los ajustes del puntero deben ser números enteros")
         if not 0.5 <= self.speed <= 3.0:
             raise ValueError("La velocidad debe estar entre 0,5 y 3")
         if not 0 <= self.smoothing <= 10 or not 1 <= self.scroll_speed <= 10:
@@ -187,7 +195,9 @@ class PointerController:
         pointer: tuple[float, float] | None,
         events: Iterable[GestureEvent],
         timestamp_ms: int,
+        hold_position: bool = False,
     ) -> ControlStatus:
+        """``hold_position`` fija el cursor mientras se forma un gesto de clic (P3-47)."""
         executed: list[str] = []
         actions = [event.action for event in events]
         if Action.PAUSE in actions:
@@ -217,7 +227,10 @@ class PointerController:
 
         target = self.screen.to_pixels(*self._smooth(apply_speed(pointer, self.settings.speed),
                                                      timestamp_ms))
-        if self.position is None or math.dist(target, self.position) >= self.settings.dead_zone_px:
+        moved = self.position is None or (
+            not hold_position and math.dist(target, self.position) >= self.settings.dead_zone_px
+        )
+        if moved:
             self.position = target
             self.backend.move(*target)
         assert self.position is not None
