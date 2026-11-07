@@ -1,3 +1,5 @@
+from fakes import FakeMouse
+
 from gestia.control import (
     Button,
     ControlMode,
@@ -11,34 +13,6 @@ from gestia.gestures import Action, GestureEvent, GestureId
 
 SCREEN = ScreenArea(0, 0, 1921, 1081)
 CENTER = (0.5, 0.5)
-
-
-class FakeMouse:
-    def __init__(self) -> None:
-        self.calls: list[tuple] = []
-        self.position: tuple[int, int] | None = None
-
-    def move(self, x: int, y: int) -> None:
-        self.position = (x, y)
-        self.calls.append(("move", x, y))
-
-    def press(self, button: Button) -> None:
-        self.calls.append(("press", button, self.position))
-
-    def release(self, button: Button) -> None:
-        self.calls.append(("release", button, self.position))
-
-    def click(self, button: Button, count: int = 1) -> None:
-        self.calls.append(("click", button, count, self.position))
-
-    def scroll(self, dx: int, dy: int) -> None:
-        self.calls.append(("scroll", dx, dy))
-
-    def escape(self) -> None:
-        self.calls.append(("escape",))
-
-    def of(self, kind: str) -> list[tuple]:
-        return [call for call in self.calls if call[0] == kind]
 
 
 def event(action: Action) -> GestureEvent:

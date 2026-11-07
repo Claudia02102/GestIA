@@ -10,3 +10,6 @@ data/*.jsonl
 config.json
 *.egg-info/
 data/profiles/
+.coverage
+coverage.xml
+reportes/

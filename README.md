@@ -1,4 +1,6 @@
-# GestIA — Sprint 4
+# GestIA — Sprint 5
+
+[![Pruebas por fases](https://github.com/Claudia02102/GestIA/actions/workflows/pruebas.yml/badge.svg)](https://github.com/Claudia02102/GestIA/actions/workflows/pruebas.yml)
 
 Aplicación de escritorio local que muestra la webcam, detecta **un rostro** con MediaPipe
 Tasks Face Landmarker, dibuja sus puntos y gestiona pérdida y recuperación (Sprint 1, Épica E1).
@@ -36,6 +38,18 @@ cualquier aplicación:
 | HU-21 Teclas especiales y atajos | Intro, Borrar, Supr, Tab, Esc, flechas, Inicio, Fin, Mayús, Bloq Mayús y Copiar, Pegar, Cortar, Deshacer, Seleccionar todo. |
 | HU-22 Frases frecuentes | Lista editable por perfil; una selección escribe la frase completa. |
 | HU-23 Teclado ajustable | Tamaño de tecla y distribución (QWERTY o alfabética), guardados en el perfil; el teclado nunca se sale de la pantalla. |
+
+El Sprint 5 (Épica E5, «Mapeo y personalización de comandos») permite adaptar los gestos a
+cada persona y aplicación:
+
+| Historia | Qué incluye |
+|---|---|
+| HU-24 (P3-10) Mapeo de gestos a acciones | Cada gesto elige su acción en la pestaña **Mapeo**. Si la acción ya la usa otro gesto, ambos intercambian; siempre queda un gesto activo con clic izquierdo (o el clic por permanencia). |
+| HU-25 (P3-11) Menú de acciones rápidas | Menú flotante para cambiar de ventana, volver atrás, mostrar el escritorio, cerrar la ventana (con confirmación) y abrir aplicaciones. Se abre con un botón o un gesto. |
+| HU-26 (P3-16) Mapeo por aplicación | Mapeos propios por ejecutable (p. ej., `chrome.exe`); el resto de aplicaciones usa el general. |
+| HU-27 (P3-17) Exportar e importar | El perfil completo se exporta a JSON y se importa en otro equipo como perfil nuevo; un archivo inválido no cambia nada. |
+| HU-28 (P3-18) Restaurar valores por defecto | Botón **Restaurar valores** con confirmación: gestos, sensibilidad, mapeo, puntero y teclado vuelven a su valor inicial; se conservan la calibración y las frases. |
+| Error P3-47 | El clic con «abrir la boca» caía fuera del objetivo: los clics pasan a los guiños y el cursor se fija mientras se forma un gesto de la boca. |
 
 Además, «Cerrar ambos ojos», el botón **Pausar control** o **Ctrl+Alt+P** (desde cualquier
 aplicación) pausan y reanudan el control. Es un adelanto de HU-29 (Épica E6) para poder
@@ -185,23 +199,59 @@ Las métricas y datos técnicos del entorno (SO, arquitectura, CPU lógica, RAM,
 gráfica) se guardan como JSONL en `data/metrics.jsonl`. No se guardan fotografías, video,
 landmarks ni información de identidad.
 
-## Verificación
+## Pruebas y CI
+
+Las pruebas siguen el ciclo en V y están separadas por fase en `tests/`. GitHub Actions las
+ejecuta en ese orden ([`.github/workflows/pruebas.yml`](.github/workflows/pruebas.yml)): cada
+fase corre solo si la anterior pasó.
+
+| Fase | Carpeta | Tipo de prueba | Qué verifica |
+|---|---|---|---|
+| 0 · Estática | — | Cumplimiento de estándares | `ruff`: estilo y errores comunes |
+| 1 · Unitarias | `tests/unit` | Componente (caja blanca) | Medidas faciales, motor de gestos, calibración, puntero, estados del rostro, teclado, predicción |
+| 2 · Integración | `tests/integration` | Integración bottom-up con *stubs* | Perfiles + calibración + gestos, mapeo por aplicación, exportar/importar, paneles Qt; cobertura mínima del 65 % |
+| 3 · Sistema | `tests/system` | Sistema, *smoke* y compatibilidad | La aplicación completa con MediaPipe real sobre una foto (cámara y ratón simulados), en Windows y Linux con Python 3.11 y 3.12 |
+| 4 · Complementarias | `tests/complementarias` | Rendimiento, estabilidad, robustez, seguridad | Menos de 66 ms por imagen (HU-05), 5 min de parpadeos naturales sin clics (HU-30), datos erróneos rechazados, `pip-audit` |
+| Fuera de CI | `docs/MATRIZ_PRUEBAS_*.md` | Aceptación (UAT) y exploratorias | Personas reales con webcam |
+
+**Cuándo corre:** un `push` a cualquier rama ejecuta las fases 0 y 1 (aviso en menos de un
+minuto). Un pull request hacia `main`, un push a `main`, la ejecución nocturna (06:17 UTC) y
+**Run workflow** en la pestaña *Actions* ejecutan las cinco fases: es la regresión completa.
+
+**Control del merge:** en *Settings → Branches → Add branch protection rule* para `main`, active
+*Require a pull request before merging* y *Require status checks to pass*, y marque los checks
+de las fases. Así ningún sprint entra a `main` con pruebas rotas.
+
+Para ejecutarlas localmente (las de sistema y rendimiento necesitan el modelo descargado; sin
+él se omiten):
 
 ```powershell
 ruff check .
-pytest
+pytest                      # todas las fases
+pytest tests/unit           # una fase
+pytest tests/unit tests/integration --cov=gestia --cov-report=term-missing
 ```
+
+`tests/fakes.py` reúne los dobles de prueba: un ratón que registra órdenes y una cámara que
+entrega siempre la misma foto. La foto `tests/system/data/rostro_prueba.jpg` es de dominio
+público (astronauta Eileen Collins, NASA).
+
+`pip-audit` reporta avisos de `protobuf` 4.25, que MediaPipe 0.10.21 exige (protobuf < 5): no
+se pueden corregir sin cambiar de versión de MediaPipe, así que esa comprobación informa sin
+bloquear el merge.
 
 La [matriz manual](docs/MATRIZ_PRUEBAS_WEBCAM.md) explica cómo probar luz frontal, luz tenue,
 contraluz, lentes transparentes, pérdida, desconexión y reinicio. Debe llenarse con resultados
-reales: las pruebas simuladas no demuestran FPS ni robustez física. Consulte también el
-[informe del Sprint 1](docs/INFORME_SPRINT_1.md), el
-[informe del Sprint 2](docs/INFORME_SPRINT_2.md) y la
-[matriz de aceptación del Sprint 2](docs/MATRIZ_PRUEBAS_SPRINT_2.md), el
-[informe del Sprint 3](docs/INFORME_SPRINT_3.md), la
-[matriz de aceptación del Sprint 3](docs/MATRIZ_PRUEBAS_SPRINT_3.md), el
-[informe del Sprint 4](docs/INFORME_SPRINT_4.md) y la
-[matriz de aceptación del Sprint 4](docs/MATRIZ_PRUEBAS_SPRINT_4.md).
+reales: las pruebas simuladas no demuestran FPS ni robustez física. Informes y matrices de
+aceptación por sprint:
+
+| Sprint | Informe | Matriz de aceptación |
+|---|---|---|
+| 1 | [Informe](docs/INFORME_SPRINT_1.md) | [Webcam](docs/MATRIZ_PRUEBAS_WEBCAM.md) |
+| 2 | [Informe](docs/INFORME_SPRINT_2.md) | [Matriz](docs/MATRIZ_PRUEBAS_SPRINT_2.md) |
+| 3 | [Informe](docs/INFORME_SPRINT_3.md) | [Matriz](docs/MATRIZ_PRUEBAS_SPRINT_3.md) |
+| 4 | [Informe](docs/INFORME_SPRINT_4.md) | [Matriz](docs/MATRIZ_PRUEBAS_SPRINT_4.md) |
+| 5 | [Informe](docs/INFORME_SPRINT_5.md) | [Matriz](docs/MATRIZ_PRUEBAS_SPRINT_5.md) |
 
 ## Problemas frecuentes
 
@@ -250,6 +300,9 @@ reales: las pruebas simuladas no demuestran FPS ni robustez física. Consulte ta
 - `ui_calibration.py`, `ui_profile.py`, `ui_widgets.py`, `ui_keyboard.py`,
   `ui_quick_menu.py`: asistente, panel de gestos, puntero virtual, ventana del teclado y menú de
   acciones rápidas.
+
+Pruebas: `tests/unit`, `tests/integration`, `tests/system` y `tests/complementarias` (ver
+[Pruebas y CI](#pruebas-y-ci)); `tests/fakes.py` con los dobles de prueba compartidos.
 
 Flujo de datos: `capture` → `vision` (landmarks) → `tracking` (estado) → `features` →
 `gestures` (en el hilo del worker) → `DisplayPacket` → `ui` (vista, asistente, recentrado,

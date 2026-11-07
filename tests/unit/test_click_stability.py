@@ -1,6 +1,6 @@
 """P3-47: el clic debe caer donde estaba el cursor y cerrar la boca no debe desplazar."""
 
-from test_control import FakeMouse
+from fakes import FakeMouse
 
 from gestia.control import PointerController, PointerSettings, ScreenArea
 from gestia.features import FaceFeatures
