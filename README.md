@@ -37,9 +37,11 @@ cualquier aplicación:
 | HU-22 Frases frecuentes | Lista editable por perfil; una selección escribe la frase completa. |
 | HU-23 Teclado ajustable | Tamaño de tecla y distribución (QWERTY o alfabética), guardados en el perfil; el teclado nunca se sale de la pantalla. |
 
-Además, «Cerrar ambos ojos», el botón **Pausar control** o **Ctrl+Alt+P** (desde cualquier
-aplicación) pausan y reanudan el control. Es un adelanto de HU-29 (Épica E6) para poder
-detener el cursor con seguridad. La utilidad de accesibilidad debe evaluarse con usuarios; no
+Además, «Cerrar ambos ojos» (≥ 800 ms), el botón **Pausar control** o **Ctrl+Alt+P** (desde
+cualquier aplicación) pausan y reanudan el control (P3-19). En pausa el cursor no se mueve y
+ningún gesto actúa (ni clics, ni recentrar, ni el menú), salvo el de reanudar. Al pausar y
+reanudar suena un aviso, y mientras dura la pausa un cartel amarillo arriba de la pantalla
+indica cómo reanudar, aunque GestIA esté detrás de otra ventana. La utilidad de accesibilidad debe evaluarse con usuarios; no
 es un resultado demostrado.
 
 ## Requisitos

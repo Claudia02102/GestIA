@@ -198,6 +198,24 @@ def has_left_click(
     )
 
 
+def acts_while_paused(action: Action | None) -> bool:
+    """En pausa solo actúa el gesto de reanudar; los demás se ignoran (P3-19)."""
+    return action is Action.PAUSE
+
+
+def resume_hint(
+    settings: Mapping[GestureId, GestureSettings], actions: Mapping[GestureId, Action]
+) -> str:
+    """Cómo reanudar el control: el gesto activo de pausa (si lo hay) o el atajo."""
+    gestures = [
+        GESTURES[gesture].name.lower()
+        for gesture, action in actions.items()
+        if action is Action.PAUSE and gesture in settings and settings[gesture].enabled
+    ]
+    ways = [*gestures, "Ctrl+Alt+P"]
+    return "Para reanudar: " + " o ".join(ways)
+
+
 def positional_gesture_forming(
     activations: Mapping[GestureId, float],
     settings: Mapping[GestureId, GestureSettings],

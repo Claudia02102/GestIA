@@ -1,10 +1,47 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QPainter, QPaintEvent, QPen
-from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import QPoint, QPointF, QRectF, Qt
+from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPaintEvent, QPen
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from gestia.calibration import CORNER_ZONE, CORNERS
+
+
+class PauseIndicator(QWidget):
+    """Aviso flotante de pausa (P3-19): se ve sobre cualquier aplicación y no roba el foco."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            None,
+            Qt.WindowType.Tool
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.WindowDoesNotAcceptFocus,
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setStyleSheet(
+            "QWidget { background: #fde68a; border: 2px solid #ca8a04; border-radius: 10px; }"
+            "QLabel { border: none; color: #713f12; }"
+        )
+        self.title = QLabel("⏸  Control en pausa")
+        font = self.title.font()
+        font.setPixelSize(20)
+        font.setBold(True)
+        self.title.setFont(font)
+        self.hint = QLabel()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 10, 16, 10)
+        layout.addWidget(self.title, alignment=Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.hint, alignment=Qt.AlignmentFlag.AlignCenter)
+
+    def show_paused(self, hint: str) -> None:
+        self.hint.setText(hint)
+        self.adjustSize()
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        area = screen.availableGeometry()
+        self.move(QPoint(area.x() + (area.width() - self.width()) // 2, area.y() + 12))
+        self.show()
 
 
 class PointerPreview(QWidget):

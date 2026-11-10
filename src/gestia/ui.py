@@ -7,6 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QCloseEvent, QGuiApplication, QImage, QPixmap
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -33,7 +34,14 @@ from gestia.control import (
     apply_speed,
 )
 from gestia.domain import DisplayPacket, TrackingState
-from gestia.gestures import GESTURES, Action, GestureEvent, positional_gesture_forming
+from gestia.gestures import (
+    GESTURES,
+    Action,
+    GestureEvent,
+    acts_while_paused,
+    positional_gesture_forming,
+    resume_hint,
+)
 from gestia.keyboard import PynputKeyboardBackend
 from gestia.persistence import MetricsWriter
 from gestia.profiles import Profile, ProfileStore
@@ -42,7 +50,7 @@ from gestia.ui_calibration import CalibrationDialog
 from gestia.ui_keyboard import KeyboardWindow
 from gestia.ui_profile import GesturePanel
 from gestia.ui_quick_menu import QuickMenuWindow
-from gestia.ui_widgets import PointerPreview
+from gestia.ui_widgets import PauseIndicator, PointerPreview
 from gestia.worker import PipelineWorker
 
 LOGGER = logging.getLogger(__name__)
@@ -109,6 +117,7 @@ class MainWindow(QMainWindow):
         self.controller: PointerController | None = None
         self.keyboard: KeyboardWindow | None = None
         self.quick_menu: QuickMenuWindow | None = None
+        self.pause_indicator = PauseIndicator()
         self.action_app: str | None = None
         self.hotkeys = HotkeyBridge()
         self.hotkeys.triggered.connect(self.toggle_pause)
@@ -308,9 +317,20 @@ class MainWindow(QMainWindow):
         if self.controller is None:
             return
         self.controller.toggle_pause()
-        paused = self.controller.paused
+        self._pause_changed()
+
+    def _pause_changed(self) -> None:
+        """P3-19: el estado de pausa se ve y se oye, aunque GestIA esté detrás de otra ventana."""
+        paused = self.controller is not None and self.controller.paused
         self.pause_button.setText("Reanudar control" if paused else "Pausar control")
         self.panel.log_message("Control en pausa." if paused else "Control reanudado.")
+        QApplication.beep()
+        if paused:
+            self.pause_indicator.show_paused(
+                resume_hint(self.profile.gestures, self.profile.actions)
+            )
+        else:
+            self.pause_indicator.hide()
 
     def _create_controller(self) -> None:
         screen = QGuiApplication.primaryScreen()
@@ -665,15 +685,17 @@ class MainWindow(QMainWindow):
             self.open_calibration()
             return
         os_events = []
+        paused = self.controller is not None and self.controller.paused
         for event in packet.gestures.events:
             event = self._event_for_active_app(event)
             self.panel.log_event(event)
-            if event.action is Action.RECALIBRATE:
+            if paused and not acts_while_paused(event.action):
+                # P3-19: en pausa ningún gesto actúa, salvo el de reanudar.
+                self.panel.log_message("Ignorado: el control está en pausa.")
+            elif event.action is Action.RECALIBRATE:
                 self.start_recenter()
             elif event.action is Action.QUICK_MENU:
-                # En pausa los gestos no actúan; solo cuenta el de reanudar.
-                if self.controller is None or not self.controller.paused:
-                    self.quick_menu_button.toggle()
+                self.quick_menu_button.toggle()
             else:
                 os_events.append(event)
         if self.controller is not None:
@@ -687,10 +709,8 @@ class MainWindow(QMainWindow):
             )
             for item in status.executed:
                 self.panel.log_message(f"Ejecutado: {item}")
-            if any(event.action is Action.PAUSE for event in os_events):
-                self.pause_button.setText(
-                    "Reanudar control" if self.controller.paused else "Pausar control"
-                )
+            if self.controller.paused != paused:
+                self._pause_changed()
             self._show_control(status)
         self._feed_recenter(packet)
 
@@ -765,6 +785,7 @@ class MainWindow(QMainWindow):
         if self.controller is not None:
             self.controller.release_all(cancel=True)
             self.controller = None
+        self.pause_indicator.hide()
         self.pause_button.setEnabled(False)
         self.mode_label.setText("")
         self.recenterer = None
@@ -793,4 +814,5 @@ class MainWindow(QMainWindow):
             self.keyboard.close()
         if self.quick_menu is not None:
             self.quick_menu.close()
+        self.pause_indicator.close()
         event.accept()
