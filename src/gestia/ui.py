@@ -118,6 +118,7 @@ class MainWindow(QMainWindow):
         self.keyboard: KeyboardWindow | None = None
         self.quick_menu: QuickMenuWindow | None = None
         self.pause_indicator = PauseIndicator()
+        self.speaking = False
         self.action_app: str | None = None
         self.hotkeys = HotkeyBridge()
         self.hotkeys.triggered.connect(self.toggle_pause)
@@ -684,6 +685,13 @@ class MainWindow(QMainWindow):
         if tracking and calibration is None and not self.wizard_offered:
             self.open_calibration()
             return
+        if packet.gestures.speaking != self.speaking:
+            # P3-22: mientras la persona habla, abrir la boca o sonreír no ejecuta acciones.
+            self.speaking = packet.gestures.speaking
+            self.panel.log_message(
+                "Hablando: los gestos de la boca esperan." if self.speaking
+                else "Gestos de la boca disponibles otra vez."
+            )
         os_events = []
         paused = self.controller is not None and self.controller.paused
         for event in packet.gestures.events:

@@ -163,6 +163,13 @@ inclinación medida, y al cerrarla los labios se juntan como al fruncirlos. Adem
 - Durante 600 ms después de soltar un gesto de la boca, los otros gestos de la boca (sonreír,
   fruncir los labios) no cuentan, así que cerrar la boca ya no activa el desplazamiento.
 
+**Gestos involuntarios (P3-22).** Un gesto solo cuenta si se sostiene el tiempo configurado
+en **Gestos**. Un parpadeo natural no es un guiño ni pausa: en el grupo de los ojos gana el
+gesto más marcado y la pausa exige 800 ms. Al **hablar**, la boca se abre y se cierra varias
+veces seguidas: con 3 aperturas en 2 s, los gestos de la boca (abrir, sonreír, fruncir) esperan
+hasta 1,2 s después de la última, así que conversar o reír hablando no hace doble clic ni
+arrastra. La pestaña **Eventos** avisa cuando empieza y termina esa espera.
+
 Los perfiles existentes conservan su mapeo. Para usar el nuevo, pulse **Restaurar valores** y
 luego **Calibrar** (los guiños venían desactivados y no estaban calibrados).
 
