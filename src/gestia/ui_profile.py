@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from gestia.app_context import normalize_app_name, open_apps
+from gestia.feedback import MAX_BREAK_MINUTES, MIN_BREAK_MINUTES
 from gestia.gestures import (
     ACTION_TEXT,
     GESTURES,
@@ -53,6 +54,7 @@ class GesturePanel(QTabWidget):
     """Edita el perfil en memoria y emite ``changed`` para guardarlo y aplicarlo en vivo."""
 
     changed = Signal()
+    reminder_test_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -108,6 +110,7 @@ class GesturePanel(QTabWidget):
 
         self.addTab(self._build_pointer_page(), "Puntero")
         self.addTab(self._build_keyboard_page(), "Teclado")
+        self.addTab(self._build_feedback_page(), "Avisos")
 
         self.events = QListWidget()
         self.addTab(self.events, "Eventos")
@@ -352,6 +355,56 @@ class GesturePanel(QTabWidget):
         form.addRow(note)
         return page
 
+    def _build_feedback_page(self) -> QWidget:
+        """P3-44 y P3-45: sonido, indicador de estado y recordatorios de descanso."""
+        page = QWidget()
+        form = QFormLayout(page)
+        self.sound_check = QCheckBox("Sonido al reconocer un gesto, al pausar y en los avisos")
+        self.indicator_check = QCheckBox("Indicador de estado siempre visible (esquina inferior)")
+        self.breaks_check = QCheckBox("Recordarme que descanse")
+        self.break_minutes = QSpinBox()
+        self.break_minutes.setRange(MIN_BREAK_MINUTES, MAX_BREAK_MINUTES)
+        self.break_minutes.setSuffix(" min de uso")
+        test = QPushButton("Probar aviso de descanso")
+        test.clicked.connect(self.reminder_test_requested)
+        form.addRow(self.sound_check)
+        form.addRow(self.indicator_check)
+        form.addRow(self.breaks_check)
+        form.addRow("Intervalo:", self.break_minutes)
+        form.addRow(test)
+        note = QLabel(
+            "Sin sonido, cada gesto reconocido sigue destellando en el indicador. El tiempo de "
+            "descanso cuenta solo mientras el control está activo; una pausa de 2 minutos o más "
+            "cuenta como descanso. El aviso aparece arriba a la derecha, no quita el foco ni "
+            "pausa el control y se cierra solo a los 20 s."
+        )
+        note.setWordWrap(True)
+        form.addRow(note)
+        for check in (self.sound_check, self.indicator_check, self.breaks_check):
+            check.toggled.connect(self._feedback_changed)
+        self.break_minutes.valueChanged.connect(self._feedback_changed)
+        return page
+
+    def _feedback_changed(self) -> None:
+        self.break_minutes.setEnabled(self.breaks_check.isChecked())
+        if self._loading or self.profile is None:
+            return
+        feedback = self.profile.feedback
+        feedback.sound = self.sound_check.isChecked()
+        feedback.indicator = self.indicator_check.isChecked()
+        feedback.breaks = self.breaks_check.isChecked()
+        feedback.break_minutes = self.break_minutes.value()
+        self.changed.emit()
+
+    def _load_feedback(self) -> None:
+        assert self.profile is not None
+        feedback = self.profile.feedback
+        self.sound_check.setChecked(feedback.sound)
+        self.indicator_check.setChecked(feedback.indicator)
+        self.breaks_check.setChecked(feedback.breaks)
+        self.break_minutes.setValue(feedback.break_minutes)
+        self.break_minutes.setEnabled(feedback.breaks)
+
     def _keyboard_changed(self) -> None:
         if self._loading or self.profile is None:
             return
@@ -484,6 +537,7 @@ class GesturePanel(QTabWidget):
             self.scroll_speed.setValue(pointer.scroll_speed)
             self._pointer_labels()
             self._load_keyboard()
+            self._load_feedback()
             self._load_apps()
         finally:
             self._loading = False

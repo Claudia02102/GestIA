@@ -37,9 +37,11 @@ cualquier aplicación:
 | HU-22 Frases frecuentes | Lista editable por perfil; una selección escribe la frase completa. |
 | HU-23 Teclado ajustable | Tamaño de tecla y distribución (QWERTY o alfabética), guardados en el perfil; el teclado nunca se sale de la pantalla. |
 
-Además, «Cerrar ambos ojos», el botón **Pausar control** o **Ctrl+Alt+P** (desde cualquier
-aplicación) pausan y reanudan el control. Es un adelanto de HU-29 (Épica E6) para poder
-detener el cursor con seguridad. La utilidad de accesibilidad debe evaluarse con usuarios; no
+Además, «Cerrar ambos ojos» (≥ 800 ms), el botón **Pausar control** o **Ctrl+Alt+P** (desde
+cualquier aplicación) pausan y reanudan el control (P3-19). En pausa el cursor no se mueve y
+ningún gesto actúa (ni clics, ni recentrar, ni el menú), salvo el de reanudar. Al pausar y
+reanudar suena un aviso, y mientras dura la pausa un cartel amarillo arriba de la pantalla
+indica cómo reanudar, aunque GestIA esté detrás de otra ventana. La utilidad de accesibilidad debe evaluarse con usuarios; no
 es un resultado demostrado.
 
 ## Requisitos
@@ -161,6 +163,35 @@ inclinación medida, y al cerrarla los labios se juntan como al fruncirlos. Adem
 - Durante 600 ms después de soltar un gesto de la boca, los otros gestos de la boca (sonreír,
   fruncir los labios) no cuentan, así que cerrar la boca ya no activa el desplazamiento.
 
+**Gestos involuntarios (P3-22).** Un gesto solo cuenta si se sostiene el tiempo configurado
+en **Gestos**. Un parpadeo natural no es un guiño ni pausa: en el grupo de los ojos gana el
+gesto más marcado y la pausa exige 800 ms. Al **hablar**, la boca se abre y se cierra varias
+veces seguidas: con 3 aperturas en 2 s, los gestos de la boca (abrir, sonreír, fruncir) esperan
+hasta 1,2 s después de la última, así que conversar o reír hablando no hace doble clic ni
+arrastra. La pestaña **Eventos** avisa cuando empieza y termina esa espera.
+
+**Retroalimentación e indicador de estado (P3-44).** Abajo a la derecha de la pantalla hay
+siempre un indicador, visible sobre cualquier aplicación y sin robar el foco ni los clics:
+**● Activo** (verde), **● En pausa** (amarillo), **● Sin rostro** (rojo), **Detenido** o
+**Activo, cursor desactivado**. Cada gesto reconocido destella en el indicador con su acción
+(«✔ Clic izquierdo») y suena un aviso. La pausa tiene su propio sonido y cartel (P3-19). En
+la pestaña **Avisos** se puede desactivar el sonido (los destellos siguen) o el indicador.
+
+**Recordatorios de descanso (P3-45).** En **Avisos** se activa el recordatorio y su intervalo
+(1–180 min de uso; 30 por defecto). Solo cuenta el tiempo con el control activo y el rostro
+visible; una pausa de 2 minutos o más cuenta como descanso y reinicia la cuenta. El aviso
+aparece arriba a la derecha con un sonido, no quita el foco, no pausa el control y se cierra
+solo a los 20 s. **Probar aviso de descanso** lo muestra al momento.
+
+**Estilo visual y modo oscuro.** La aplicación usa el lenguaje visual de la landing: fondo
+crema `#f3efe6`, tarjetas blancas `#ffffff` redondeadas, tinta `#13171c` y el naranja de marca
+`#ff6a2b` en botones principales, pestañas activas, interruptores y deslizadores. El
+interruptor **Modo oscuro** de la cabecera cambia toda la aplicación al instante (también el
+teclado y el menú rápido) y se guarda en el perfil; *Restaurar valores* no lo cambia. El
+asistente de calibración es siempre oscuro, para concentrarse en la instrucción. Contraste
+WCAG 2.1 AA (texto ≥ 4,5:1, comprobado en las pruebas): como el naranja da 2,9:1 con el
+blanco, el texto sobre él es tinta y el texto naranja en modo claro usa el tono `#b93c0d`.
+
 Los perfiles existentes conservan su mapeo. Para usar el nuevo, pulse **Restaurar valores** y
 luego **Calibrar** (los guiños venían desactivados y no estaban calibrados).
 
@@ -247,6 +278,8 @@ reales: las pruebas simuladas no demuestran FPS ni robustez física. Consulte ta
 - `quick_actions.py`: acciones rápidas del sistema (atajos de ventanas y abrir aplicaciones)
   y backend pynput.
 - `prediction.py`, `lexicon_es.py`: predicción de palabras con diccionario local y aprendizaje.
+- `feedback.py`: estado que muestra el indicador, sonidos y temporizador de descanso.
+- `theme.py`: paleta de marca (modo claro y oscuro) y hojas de estilo de toda la interfaz.
 - `ui_calibration.py`, `ui_profile.py`, `ui_widgets.py`, `ui_keyboard.py`,
   `ui_quick_menu.py`: asistente, panel de gestos, puntero virtual, ventana del teclado y menú de
   acciones rápidas.

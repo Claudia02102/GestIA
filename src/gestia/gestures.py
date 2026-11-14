@@ -116,6 +116,13 @@ RELEASE_RATIO = 0.7
 # Tras soltar un gesto de la boca, los otros de su grupo esperan: al cerrarla, los labios se
 # juntan y parecen fruncidos (P3-47).
 GROUP_COOLDOWN_MS = {"mouth": 600}
+# P3-22: hablar abre y cierra la boca varias veces seguidas. Con SPEECH_OPENINGS aperturas en
+# SPEECH_WINDOW_MS se considera que la persona habla, y los gestos de la boca esperan hasta
+# SPEECH_HOLD_MS después de la última apertura.
+SPEECH_LEVEL = 0.3
+SPEECH_OPENINGS = 3
+SPEECH_WINDOW_MS = 2000
+SPEECH_HOLD_MS = 1200
 # Fracción del umbral a partir de la cual un gesto posicional fija el cursor.
 FREEZE_RATIO = 0.5
 
@@ -198,6 +205,24 @@ def has_left_click(
     )
 
 
+def acts_while_paused(action: Action | None) -> bool:
+    """En pausa solo actúa el gesto de reanudar; los demás se ignoran (P3-19)."""
+    return action is Action.PAUSE
+
+
+def resume_hint(
+    settings: Mapping[GestureId, GestureSettings], actions: Mapping[GestureId, Action]
+) -> str:
+    """Cómo reanudar el control: el gesto activo de pausa (si lo hay) o el atajo."""
+    gestures = [
+        GESTURES[gesture].name.lower()
+        for gesture, action in actions.items()
+        if action is Action.PAUSE and gesture in settings and settings[gesture].enabled
+    ]
+    ways = [*gestures, "Ctrl+Alt+P"]
+    return "Para reanudar: " + " o ".join(ways)
+
+
 def positional_gesture_forming(
     activations: Mapping[GestureId, float],
     settings: Mapping[GestureId, GestureSettings],
@@ -230,6 +255,8 @@ class GestureEvent:
 class GestureFrame:
     activations: dict[GestureId, float] = field(default_factory=dict)
     events: tuple[GestureEvent, ...] = ()
+    # P3-22: la persona está hablando y los gestos de la boca no cuentan.
+    speaking: bool = False
 
 
 @dataclass(slots=True)
@@ -248,6 +275,9 @@ class GestureEngine:
         self._trackers: dict[GestureId, _Tracker] = {}
         # Último gesto de cada grupo que estuvo marcado y cuándo dejó de estarlo.
         self._group_owner: dict[str, tuple[GestureId, int]] = {}
+        self._mouth_open = False
+        self._openings: list[int] = []
+        self._speaking_until_ms = -1
 
     def configure(
         self,
@@ -271,6 +301,24 @@ class GestureEngine:
     def reset(self) -> None:
         self._trackers = {gesture: _Tracker() for gesture in GESTURES}
         self._group_owner = {}
+        self._mouth_open = False
+        self._openings = []
+        self._speaking_until_ms = -1
+
+    def _detect_speech(self, features: FaceFeatures, timestamp_ms: int) -> bool:
+        """Varias aperturas cortas de la boca seguidas: la persona habla (P3-22)."""
+        mouth = self._ranges.get(GestureId.MOUTH_OPEN)
+        if mouth is None:
+            return False
+        opened = mouth.normalize(features.mouth_open) >= SPEECH_LEVEL
+        if opened and not self._mouth_open:
+            self._openings = [
+                ts for ts in self._openings if timestamp_ms - ts < SPEECH_WINDOW_MS
+            ] + [timestamp_ms]
+            if len(self._openings) >= SPEECH_OPENINGS:
+                self._speaking_until_ms = timestamp_ms + SPEECH_HOLD_MS
+        self._mouth_open = opened
+        return timestamp_ms < self._speaking_until_ms
 
     def update(self, features: FaceFeatures, timestamp_ms: int) -> GestureFrame:
         activations = {
@@ -293,6 +341,7 @@ class GestureEngine:
                 leaders[group] = owner[0]
             elif activations[leader] >= self._settings[leader].threshold * RELEASE_RATIO:
                 self._group_owner[group] = (leader, timestamp_ms)
+        speaking = self._detect_speech(features, timestamp_ms)
         events: list[GestureEvent] = []
         for gesture in GESTURES:
             tracker = self._trackers.setdefault(gesture, _Tracker())
@@ -301,7 +350,10 @@ class GestureEngine:
                 continue
             settings, value = self._settings[gesture], activations[gesture]
             group = GESTURES[gesture].group
-            suppressed = bool(group) and leaders.get(group) != gesture
+            suppressed = (
+                (bool(group) and leaders.get(group) != gesture)
+                or (speaking and group == "mouth")
+            )
             if value >= settings.threshold and not suppressed:
                 if tracker.active_since_ms is None:
                     tracker.active_since_ms = timestamp_ms
@@ -315,4 +367,4 @@ class GestureEngine:
                 tracker.active_since_ms = None
                 if value < settings.threshold * RELEASE_RATIO or suppressed:
                     tracker.fired = False
-        return GestureFrame(activations, tuple(events))
+        return GestureFrame(activations, tuple(events), speaking)

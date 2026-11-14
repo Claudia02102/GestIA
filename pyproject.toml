@@ -21,6 +21,8 @@ dev = ["pytest==8.3.5", "ruff==0.9.10"]
 gestia = "gestia.app:main"
 [tool.setuptools.packages.find]
 where = ["src"]
+[tool.setuptools.package-data]
+gestia = ["assets/*.svg"]
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -21,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gestia import theme
 from gestia.app_context import foreground_app
 from gestia.calibration import Calibration, Recenterer, RecenterStatus
 from gestia.config import AppConfig, resolve_from_project
@@ -33,7 +36,23 @@ from gestia.control import (
     apply_speed,
 )
 from gestia.domain import DisplayPacket, TrackingState
-from gestia.gestures import GESTURES, Action, GestureEvent, positional_gesture_forming
+from gestia.feedback import (
+    BreakTimer,
+    Feedback,
+    Sound,
+    SystemSound,
+    break_message,
+    status_for,
+)
+from gestia.gestures import (
+    ACTION_TEXT,
+    GESTURES,
+    Action,
+    GestureEvent,
+    acts_while_paused,
+    positional_gesture_forming,
+    resume_hint,
+)
 from gestia.keyboard import PynputKeyboardBackend
 from gestia.persistence import MetricsWriter
 from gestia.profiles import Profile, ProfileStore
@@ -42,19 +61,35 @@ from gestia.ui_calibration import CalibrationDialog
 from gestia.ui_keyboard import KeyboardWindow
 from gestia.ui_profile import GesturePanel
 from gestia.ui_quick_menu import QuickMenuWindow
-from gestia.ui_widgets import PointerPreview
+from gestia.ui_widgets import (
+    BreakReminder,
+    LogoMark,
+    PauseIndicator,
+    PointerPreview,
+    StatusIndicator,
+    ToggleSwitch,
+)
 from gestia.worker import PipelineWorker
 
 LOGGER = logging.getLogger(__name__)
+BREAK_TICK_MS = 1000
 PAUSE_HOTKEY = "<ctrl>+<alt>+p"
 ACTIVE_APP_POLL_MS = 1000
+# Cada modo usa un color de la paleta (``theme.Palette``), válido en modo claro y oscuro.
 MODE_TEXT = {
-    ControlMode.DISABLED: ("Cursor: control desactivado", "#64748b"),
-    ControlMode.NO_FACE: ("Cursor: detenido (sin rostro)", "#ea580c"),
-    ControlMode.NORMAL: ("Cursor: controlado por la cabeza", "#16a34a"),
-    ControlMode.DRAGGING: ("Cursor: arrastrando", "#2563eb"),
-    ControlMode.SCROLLING: ("Cursor: modo desplazamiento", "#7c3aed"),
-    ControlMode.PAUSED: ("Cursor: EN PAUSA", "#ca8a04"),
+    ControlMode.DISABLED: ("Cursor: control desactivado", "text_muted"),
+    ControlMode.NO_FACE: ("Cursor: detenido (sin rostro)", "danger"),
+    ControlMode.NORMAL: ("Cursor: controlado por la cabeza", "success"),
+    ControlMode.DRAGGING: ("Cursor: arrastrando", "info"),
+    ControlMode.SCROLLING: ("Cursor: modo desplazamiento", "special"),
+    ControlMode.PAUSED: ("Cursor: EN PAUSA", "warning"),
+}
+STATE_COLOR = {
+    TrackingState.STOPPED: "text_muted",
+    TrackingState.SEARCHING: "warning",
+    TrackingState.TRACKING: "success",
+    TrackingState.LOST: "danger",
+    TrackingState.ERROR: "danger",
 }
 
 
@@ -109,14 +144,27 @@ class MainWindow(QMainWindow):
         self.controller: PointerController | None = None
         self.keyboard: KeyboardWindow | None = None
         self.quick_menu: QuickMenuWindow | None = None
+        self.pause_indicator = PauseIndicator()
+        # P3-44 y P3-45: indicador de estado, sonido y recordatorios de descanso.
+        self.tracking_state = TrackingState.STOPPED
+        self.control_mode: ControlMode | None = None
+        self.status_indicator = StatusIndicator()
+        self.break_reminder = BreakReminder()
+        self.feedback = Feedback(SystemSound(), self.profile.feedback)
+        self.break_timer = BreakTimer(self.profile.feedback)
+        self.speaking = False
         self.action_app: str | None = None
         self.hotkeys = HotkeyBridge()
         self.hotkeys.triggered.connect(self.toggle_pause)
         self.setWindowTitle("GestIA — seguimiento facial")
-        self.resize(1280, 760)
+        self.resize(1360, 860)
         self._build_ui()
         self._load_profiles()
         self._set_state(TrackingState.STOPPED)
+        self.break_timer_tick = QTimer(self)
+        self.break_timer_tick.setInterval(BREAK_TICK_MS)
+        self.break_timer_tick.timeout.connect(self._tick_breaks)
+        self.break_timer_tick.start()
         self.active_app_timer = QTimer(self)
         self.active_app_timer.setInterval(ACTIVE_APP_POLL_MS)
         self.active_app_timer.timeout.connect(self._show_active_app)
@@ -125,7 +173,19 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self) -> None:
         central = QWidget()
-        layout = QVBoxLayout(central)
+        outer = QVBoxLayout(central)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(self._build_header())
+        content = QVBoxLayout()
+        content.setContentsMargins(20, 16, 20, 20)
+        content.setSpacing(16)
+        outer.addLayout(content, 1)
+        session = self._card()
+        layout = QVBoxLayout(session)
+        layout.setContentsMargins(18, 14, 18, 14)
+        layout.setSpacing(10)
+        content.addWidget(session)
         controls = QHBoxLayout()
         self.camera_selector = QComboBox()
         candidates = list(dict.fromkeys(self.config.camera.candidate_indices))
@@ -137,6 +197,7 @@ class MainWindow(QMainWindow):
             max(0, self.camera_selector.findData(self.config.camera.index))
         )
         self.start_button = QPushButton("Iniciar")
+        self.start_button.setProperty("primary", True)
         self.stop_button = QPushButton("Detener")
         self.stop_button.setEnabled(False)
         self.start_button.clicked.connect(self.start_tracking)
@@ -198,7 +259,7 @@ class MainWindow(QMainWindow):
         self.mode_label = QLabel()
         hotkey = "Ctrl+Alt+P pausa o reanuda desde cualquier aplicación."
         hotkey_label = QLabel(hotkey if self.hotkeys.active else "")
-        hotkey_label.setStyleSheet("color: #64748b;")
+        hotkey_label.setObjectName("muted")
         for widget in (
             self.control_check, self.pause_button, self.keyboard_button,
             self.quick_menu_button, self.mode_label, hotkey_label,
@@ -208,18 +269,23 @@ class MainWindow(QMainWindow):
         layout.addLayout(control_bar)
 
         body = QHBoxLayout()
-        left = QVBoxLayout()
-        right = QVBoxLayout()
-        body.addLayout(left, 3)
-        body.addLayout(right, 2)
-        layout.addLayout(body, 1)
+        body.setSpacing(16)
+        left_card, right_card = self._card(), self._card()
+        left, right = QVBoxLayout(left_card), QVBoxLayout(right_card)
+        for box, title in ((left, "CÁMARA"), (right, "PUNTERO Y AJUSTES")):
+            box.setContentsMargins(18, 16, 18, 18)
+            box.setSpacing(10)
+            eyebrow = QLabel(title)
+            eyebrow.setObjectName("eyebrow")
+            box.addWidget(eyebrow)
+        body.addWidget(left_card, 3)
+        body.addWidget(right_card, 2)
+        content.addLayout(body, 1)
 
         self.preview = QLabel("Presione Iniciar para abrir la cámara")
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview.setMinimumSize(640, 480)
-        self.preview.setStyleSheet(
-            "background: #17191c; color: #cbd5e1; border-radius: 8px;"
-        )
+        self.preview.setMinimumSize(480, 360)
+        self.preview.setObjectName("preview")
         left.addWidget(self.preview, 1)
         self.state_label = QLabel()
         left.addWidget(self.state_label)
@@ -239,16 +305,83 @@ class MainWindow(QMainWindow):
             "procesan localmente y no se guardan."
         )
         guidance.setWordWrap(True)
+        guidance.setObjectName("guidance")
         left.addWidget(guidance)
 
-        right.addWidget(QLabel("Puntero (vista previa de la pantalla):"))
+        pointer_title = QLabel("Vista previa de la pantalla")
+        pointer_title.setObjectName("muted")
+        right.addWidget(pointer_title)
         self.pointer = PointerPreview()
         self.pointer.setMinimumHeight(170)
         right.addWidget(self.pointer)
         self.panel = GesturePanel()
         self.panel.changed.connect(self._profile_changed)
+        self.panel.reminder_test_requested.connect(self.show_break_reminder)
         right.addWidget(self.panel, 1)
         self.setCentralWidget(central)
+
+    @staticmethod
+    def _card() -> QFrame:
+        card = QFrame()
+        card.setObjectName("card")
+        return card
+
+    def _build_header(self) -> QFrame:
+        """Cabecera como la de la landing: marca a la izquierda y modo oscuro a la derecha."""
+        header = QFrame()
+        header.setObjectName("header")
+        bar = QHBoxLayout(header)
+        bar.setContentsMargins(20, 10, 20, 10)
+        bar.setSpacing(10)
+        brand = QLabel()
+        brand.setObjectName("brand")
+        self.brand_label = brand
+        tagline = QLabel("ACCESIBILIDAD · GESTOS FACIALES · IA")
+        tagline.setObjectName("pill")
+        self.dark_switch = ToggleSwitch("Modo oscuro")
+        self.dark_switch.toggled.connect(self._dark_toggled)
+        dark_label = QLabel("Modo oscuro")
+        dark_label.setObjectName("muted")
+        dark_label.setBuddy(self.dark_switch)
+        bar.addWidget(LogoMark())
+        bar.addWidget(brand)
+        bar.addSpacing(8)
+        bar.addWidget(tagline)
+        bar.addStretch()
+        bar.addWidget(dark_label)
+        bar.addWidget(self.dark_switch)
+        return header
+
+    # --- Estilo visual y modo oscuro --------------------------------------------------------
+
+    def _apply_theme(self) -> None:
+        dark = self.profile.appearance.dark_mode
+        palette = theme.apply(dark)
+        self.dark_switch.blockSignals(True)
+        self.dark_switch.setChecked(dark)
+        self.dark_switch.blockSignals(False)
+        self.brand_label.setText(
+            f'Gest<span style="color: {palette.accent_text};">IA</span>'
+        )
+        for window in (self.keyboard, self.quick_menu):
+            if window is not None:
+                window.setStyleSheet(theme.keyboard_stylesheet(palette))
+        # Los textos con color de estado se repintan con la paleta nueva.
+        self._set_state(self.tracking_state)
+        self._update_profile_status()
+        if self.controller is not None and self.control_mode is not None:
+            text, token = MODE_TEXT[self.control_mode]
+            self.mode_label.setStyleSheet(
+                f"font-weight: 600; color: {getattr(palette, token)};"
+            )
+        self.pointer.update()
+
+    @Slot(bool)
+    def _dark_toggled(self, dark: bool) -> None:
+        self.profile.appearance.dark_mode = dark
+        self._save_profile()
+        self._apply_theme()
+        self.panel.log_message("Modo oscuro activado." if dark else "Modo claro activado.")
 
     # --- Perfiles -------------------------------------------------------------------------
 
@@ -268,6 +401,8 @@ class MainWindow(QMainWindow):
         self.pointer.set_pointer(None)
         self._update_profile_status()
         self._apply_pointer_settings()
+        self._apply_feedback_settings()
+        self._apply_theme()
         if self.keyboard is not None:
             self.keyboard.set_settings(profile.keyboard)
         if self.worker is not None:
@@ -275,11 +410,12 @@ class MainWindow(QMainWindow):
 
     def _update_profile_status(self) -> None:
         if self.profile.calibration is None:
-            text, color = "Sin calibrar", "#ca8a04"
+            text, token = "Sin calibrar", "warning"
         else:
-            text, color = "Calibrado", "#16a34a"
+            text, token = "Calibrado", "success"
         self.profile_status.setText(text)
-        self.profile_status.setStyleSheet(f"font-weight: 600; color: {color};")
+        color = getattr(theme.current(), token)
+        self.profile_status.setStyleSheet(f"font-weight: 700; color: {color};")
 
     def _save_profile(self) -> None:
         try:
@@ -290,6 +426,7 @@ class MainWindow(QMainWindow):
             self.worker.apply_profile(self.profile)
         self._update_profile_status()
         self._apply_pointer_settings()
+        self._apply_feedback_settings()
 
     def _apply_pointer_settings(self) -> None:
         self.control_check.blockSignals(True)
@@ -308,9 +445,21 @@ class MainWindow(QMainWindow):
         if self.controller is None:
             return
         self.controller.toggle_pause()
-        paused = self.controller.paused
+        self._pause_changed()
+
+    def _pause_changed(self) -> None:
+        """P3-19: el estado de pausa se ve y se oye, aunque GestIA esté detrás de otra ventana."""
+        paused = self.controller is not None and self.controller.paused
         self.pause_button.setText("Reanudar control" if paused else "Pausar control")
         self.panel.log_message("Control en pausa." if paused else "Control reanudado.")
+        self.feedback.play(Sound.PAUSE)
+        self._refresh_status()
+        if paused:
+            self.pause_indicator.show_paused(
+                resume_hint(self.profile.gestures, self.profile.actions)
+            )
+        else:
+            self.pause_indicator.hide()
 
     def _create_controller(self) -> None:
         screen = QGuiApplication.primaryScreen()
@@ -331,8 +480,54 @@ class MainWindow(QMainWindow):
         self.pause_button.setEnabled(True)
         self.pause_button.setText("Pausar control")
 
+    # --- Retroalimentación e indicador de estado (P3-44) ------------------------------------
+
+    def _apply_feedback_settings(self) -> None:
+        self.feedback.settings = self.profile.feedback
+        self.break_timer.configure(self.profile.feedback)
+        self._refresh_status()
+
+    def _refresh_status(self) -> None:
+        if not self.profile.feedback.indicator:
+            self.status_indicator.hide()
+            return
+        paused = self.controller is not None and self.controller.paused
+        self.status_indicator.set_status(
+            status_for(self.thread is not None, self.tracking_state, self.control_mode, paused)
+        )
+        self.status_indicator.show()
+
+    def _gesture_feedback(self, event: GestureEvent) -> None:
+        """Gesto reconocido: destello (siempre) y sonido (si está activado)."""
+        self.status_indicator.flash(ACTION_TEXT[event.action])
+        self.feedback.play(Sound.GESTURE)
+
+    # --- Recordatorios de descanso (P3-45) --------------------------------------------------
+
+    @Slot()
+    def _tick_breaks(self) -> None:
+        paused = self.controller is not None and self.controller.paused
+        active = (
+            self.thread is not None
+            and self.tracking_state is TrackingState.TRACKING
+            and not paused
+        )
+        if self.break_timer.tick(time.monotonic(), active):
+            self.show_break_reminder()
+
+    @Slot()
+    def show_break_reminder(self) -> None:
+        """El aviso no pausa el control ni quita el foco a la aplicación en uso."""
+        self.break_reminder.show_reminder(break_message(self.profile.feedback.break_minutes))
+        self.feedback.play(Sound.REMINDER)
+        self.panel.log_message("Recordatorio de descanso.")
+
     def _show_control(self, status: ControlStatus) -> None:
-        text, color = MODE_TEXT[status.mode]
+        if status.mode is not self.control_mode:
+            self.control_mode = status.mode
+            self._refresh_status()
+        text, token = MODE_TEXT[status.mode]
+        color = getattr(theme.current(), token)
         if status.dwell_progress > 0:
             text += f" · permanencia {status.dwell_progress:.0%}"
         self.mode_label.setText(text)
@@ -664,16 +859,29 @@ class MainWindow(QMainWindow):
         if tracking and calibration is None and not self.wizard_offered:
             self.open_calibration()
             return
+        if packet.gestures.speaking != self.speaking:
+            # P3-22: mientras la persona habla, abrir la boca o sonreír no ejecuta acciones.
+            self.speaking = packet.gestures.speaking
+            self.panel.log_message(
+                "Hablando: los gestos de la boca esperan." if self.speaking
+                else "Gestos de la boca disponibles otra vez."
+            )
         os_events = []
+        paused = self.controller is not None and self.controller.paused
         for event in packet.gestures.events:
             event = self._event_for_active_app(event)
             self.panel.log_event(event)
+            if paused and not acts_while_paused(event.action):
+                # P3-19: en pausa ningún gesto actúa, salvo el de reanudar.
+                self.panel.log_message("Ignorado: el control está en pausa.")
+                continue
+            if event.action is not Action.PAUSE:
+                # La pausa ya tiene su propio aviso visual y sonoro (P3-19).
+                self._gesture_feedback(event)
             if event.action is Action.RECALIBRATE:
                 self.start_recenter()
             elif event.action is Action.QUICK_MENU:
-                # En pausa los gestos no actúan; solo cuenta el de reanudar.
-                if self.controller is None or not self.controller.paused:
-                    self.quick_menu_button.toggle()
+                self.quick_menu_button.toggle()
             else:
                 os_events.append(event)
         if self.controller is not None:
@@ -687,10 +895,8 @@ class MainWindow(QMainWindow):
             )
             for item in status.executed:
                 self.panel.log_message(f"Ejecutado: {item}")
-            if any(event.action is Action.PAUSE for event in os_events):
-                self.pause_button.setText(
-                    "Reanudar control" if self.controller.paused else "Pausar control"
-                )
+            if self.controller.paused != paused:
+                self._pause_changed()
             self._show_control(status)
         self._feed_recenter(packet)
 
@@ -731,17 +937,11 @@ class MainWindow(QMainWindow):
 
     @Slot(object)
     def _set_state(self, state: TrackingState) -> None:
-        colors = {
-            TrackingState.STOPPED: "#64748b",
-            TrackingState.SEARCHING: "#ca8a04",
-            TrackingState.TRACKING: "#16a34a",
-            TrackingState.LOST: "#ea580c",
-            TrackingState.ERROR: "#dc2626",
-        }
+        color = getattr(theme.current(), STATE_COLOR[state])
         self.state_label.setText(f"Estado: {STATE_TEXT[state]}")
-        self.state_label.setStyleSheet(
-            f"font-size: 18px; font-weight: 600; color: {colors[state]};"
-        )
+        self.state_label.setStyleSheet(f"font-size: 18px; font-weight: 700; color: {color};")
+        self.tracking_state = state
+        self._refresh_status()
 
     @Slot(str)
     def _show_error(self, message: str) -> None:
@@ -765,6 +965,9 @@ class MainWindow(QMainWindow):
         if self.controller is not None:
             self.controller.release_all(cancel=True)
             self.controller = None
+        self.pause_indicator.hide()
+        self.control_mode = None
+        self._refresh_status()
         self.pause_button.setEnabled(False)
         self.mode_label.setText("")
         self.recenterer = None
@@ -793,4 +996,8 @@ class MainWindow(QMainWindow):
             self.keyboard.close()
         if self.quick_menu is not None:
             self.quick_menu.close()
+        self.pause_indicator.close()
+        self.status_indicator.close()
+        self.break_reminder.close()
+        self.break_timer_tick.stop()
         event.accept()
