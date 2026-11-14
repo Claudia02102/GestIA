@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QCloseEvent, QGuiApplication, QImage, QPixmap
 from PySide6.QtWidgets import (
-    QApplication,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -34,7 +34,16 @@ from gestia.control import (
     apply_speed,
 )
 from gestia.domain import DisplayPacket, TrackingState
+from gestia.feedback import (
+    BreakTimer,
+    Feedback,
+    Sound,
+    SystemSound,
+    break_message,
+    status_for,
+)
 from gestia.gestures import (
+    ACTION_TEXT,
     GESTURES,
     Action,
     GestureEvent,
@@ -50,10 +59,11 @@ from gestia.ui_calibration import CalibrationDialog
 from gestia.ui_keyboard import KeyboardWindow
 from gestia.ui_profile import GesturePanel
 from gestia.ui_quick_menu import QuickMenuWindow
-from gestia.ui_widgets import PauseIndicator, PointerPreview
+from gestia.ui_widgets import BreakReminder, PauseIndicator, PointerPreview, StatusIndicator
 from gestia.worker import PipelineWorker
 
 LOGGER = logging.getLogger(__name__)
+BREAK_TICK_MS = 1000
 PAUSE_HOTKEY = "<ctrl>+<alt>+p"
 ACTIVE_APP_POLL_MS = 1000
 MODE_TEXT = {
@@ -118,6 +128,13 @@ class MainWindow(QMainWindow):
         self.keyboard: KeyboardWindow | None = None
         self.quick_menu: QuickMenuWindow | None = None
         self.pause_indicator = PauseIndicator()
+        # P3-44 y P3-45: indicador de estado, sonido y recordatorios de descanso.
+        self.tracking_state = TrackingState.STOPPED
+        self.control_mode: ControlMode | None = None
+        self.status_indicator = StatusIndicator()
+        self.break_reminder = BreakReminder()
+        self.feedback = Feedback(SystemSound(), self.profile.feedback)
+        self.break_timer = BreakTimer(self.profile.feedback)
         self.speaking = False
         self.action_app: str | None = None
         self.hotkeys = HotkeyBridge()
@@ -127,6 +144,10 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._load_profiles()
         self._set_state(TrackingState.STOPPED)
+        self.break_timer_tick = QTimer(self)
+        self.break_timer_tick.setInterval(BREAK_TICK_MS)
+        self.break_timer_tick.timeout.connect(self._tick_breaks)
+        self.break_timer_tick.start()
         self.active_app_timer = QTimer(self)
         self.active_app_timer.setInterval(ACTIVE_APP_POLL_MS)
         self.active_app_timer.timeout.connect(self._show_active_app)
@@ -257,6 +278,7 @@ class MainWindow(QMainWindow):
         right.addWidget(self.pointer)
         self.panel = GesturePanel()
         self.panel.changed.connect(self._profile_changed)
+        self.panel.reminder_test_requested.connect(self.show_break_reminder)
         right.addWidget(self.panel, 1)
         self.setCentralWidget(central)
 
@@ -278,6 +300,7 @@ class MainWindow(QMainWindow):
         self.pointer.set_pointer(None)
         self._update_profile_status()
         self._apply_pointer_settings()
+        self._apply_feedback_settings()
         if self.keyboard is not None:
             self.keyboard.set_settings(profile.keyboard)
         if self.worker is not None:
@@ -300,6 +323,7 @@ class MainWindow(QMainWindow):
             self.worker.apply_profile(self.profile)
         self._update_profile_status()
         self._apply_pointer_settings()
+        self._apply_feedback_settings()
 
     def _apply_pointer_settings(self) -> None:
         self.control_check.blockSignals(True)
@@ -325,7 +349,8 @@ class MainWindow(QMainWindow):
         paused = self.controller is not None and self.controller.paused
         self.pause_button.setText("Reanudar control" if paused else "Pausar control")
         self.panel.log_message("Control en pausa." if paused else "Control reanudado.")
-        QApplication.beep()
+        self.feedback.play(Sound.PAUSE)
+        self._refresh_status()
         if paused:
             self.pause_indicator.show_paused(
                 resume_hint(self.profile.gestures, self.profile.actions)
@@ -352,7 +377,52 @@ class MainWindow(QMainWindow):
         self.pause_button.setEnabled(True)
         self.pause_button.setText("Pausar control")
 
+    # --- Retroalimentación e indicador de estado (P3-44) ------------------------------------
+
+    def _apply_feedback_settings(self) -> None:
+        self.feedback.settings = self.profile.feedback
+        self.break_timer.configure(self.profile.feedback)
+        self._refresh_status()
+
+    def _refresh_status(self) -> None:
+        if not self.profile.feedback.indicator:
+            self.status_indicator.hide()
+            return
+        paused = self.controller is not None and self.controller.paused
+        self.status_indicator.set_status(
+            status_for(self.thread is not None, self.tracking_state, self.control_mode, paused)
+        )
+        self.status_indicator.show()
+
+    def _gesture_feedback(self, event: GestureEvent) -> None:
+        """Gesto reconocido: destello (siempre) y sonido (si está activado)."""
+        self.status_indicator.flash(ACTION_TEXT[event.action])
+        self.feedback.play(Sound.GESTURE)
+
+    # --- Recordatorios de descanso (P3-45) --------------------------------------------------
+
+    @Slot()
+    def _tick_breaks(self) -> None:
+        paused = self.controller is not None and self.controller.paused
+        active = (
+            self.thread is not None
+            and self.tracking_state is TrackingState.TRACKING
+            and not paused
+        )
+        if self.break_timer.tick(time.monotonic(), active):
+            self.show_break_reminder()
+
+    @Slot()
+    def show_break_reminder(self) -> None:
+        """El aviso no pausa el control ni quita el foco a la aplicación en uso."""
+        self.break_reminder.show_reminder(break_message(self.profile.feedback.break_minutes))
+        self.feedback.play(Sound.REMINDER)
+        self.panel.log_message("Recordatorio de descanso.")
+
     def _show_control(self, status: ControlStatus) -> None:
+        if status.mode is not self.control_mode:
+            self.control_mode = status.mode
+            self._refresh_status()
         text, color = MODE_TEXT[status.mode]
         if status.dwell_progress > 0:
             text += f" · permanencia {status.dwell_progress:.0%}"
@@ -700,7 +770,11 @@ class MainWindow(QMainWindow):
             if paused and not acts_while_paused(event.action):
                 # P3-19: en pausa ningún gesto actúa, salvo el de reanudar.
                 self.panel.log_message("Ignorado: el control está en pausa.")
-            elif event.action is Action.RECALIBRATE:
+                continue
+            if event.action is not Action.PAUSE:
+                # La pausa ya tiene su propio aviso visual y sonoro (P3-19).
+                self._gesture_feedback(event)
+            if event.action is Action.RECALIBRATE:
                 self.start_recenter()
             elif event.action is Action.QUICK_MENU:
                 self.quick_menu_button.toggle()
@@ -770,6 +844,8 @@ class MainWindow(QMainWindow):
         self.state_label.setStyleSheet(
             f"font-size: 18px; font-weight: 600; color: {colors[state]};"
         )
+        self.tracking_state = state
+        self._refresh_status()
 
     @Slot(str)
     def _show_error(self, message: str) -> None:
@@ -794,6 +870,8 @@ class MainWindow(QMainWindow):
             self.controller.release_all(cancel=True)
             self.controller = None
         self.pause_indicator.hide()
+        self.control_mode = None
+        self._refresh_status()
         self.pause_button.setEnabled(False)
         self.mode_label.setText("")
         self.recenterer = None
@@ -823,4 +901,7 @@ class MainWindow(QMainWindow):
         if self.quick_menu is not None:
             self.quick_menu.close()
         self.pause_indicator.close()
+        self.status_indicator.close()
+        self.break_reminder.close()
+        self.break_timer_tick.stop()
         event.accept()

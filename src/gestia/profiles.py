@@ -19,6 +19,7 @@ from typing import Any
 from gestia.app_context import normalize_app_name
 from gestia.calibration import Calibration
 from gestia.control import PointerSettings
+from gestia.feedback import FeedbackSettings
 from gestia.gestures import (
     DEFAULT_ACTIONS,
     MAX_SENSITIVITY,
@@ -32,7 +33,7 @@ from gestia.gestures import (
 from gestia.keyboard import KeyboardSettings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 INDEX_FILE = "index.json"
 EXPORT_FORMAT = "gestia-profile"
 EXPORT_VERSION = 1
@@ -54,6 +55,8 @@ class Profile:
     calibration: Calibration | None = None
     pointer: PointerSettings = field(default_factory=PointerSettings)
     keyboard: KeyboardSettings = field(default_factory=KeyboardSettings)
+    # P3-44 y P3-45: sonido, indicador de estado y recordatorios de descanso.
+    feedback: FeedbackSettings = field(default_factory=FeedbackSettings)
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
 
@@ -76,7 +79,7 @@ class Profile:
         ]
 
     def restore_defaults(self) -> None:
-        """P3-18: devuelve gestos, sensibilidad, mapeo, puntero y teclado a sus valores iniciales.
+        """P3-18: gestos, sensibilidad, mapeo, puntero, teclado y avisos vuelven a su valor inicial.
 
         Se conservan el nombre, la calibración, las frases frecuentes y las palabras aprendidas:
         son datos de la persona, no ajustes que puedan dejar el control inservible.
@@ -87,6 +90,7 @@ class Profile:
         self.pointer = PointerSettings()
         defaults = KeyboardSettings()
         self.keyboard.layout, self.keyboard.key_size = defaults.layout, defaults.key_size
+        self.feedback = FeedbackSettings()
 
     def actions_for(self, app: str | None) -> dict[GestureId, Action]:
         """Mapeo que rige en ``app``: el suyo propio o, si no tiene, el general."""
@@ -128,6 +132,7 @@ class Profile:
             "calibration": None if self.calibration is None else self.calibration.to_dict(),
             "pointer": asdict(self.pointer),
             "keyboard": self.keyboard.to_dict(),
+            "feedback": self.feedback.to_dict(),
         }
 
     @classmethod
@@ -158,6 +163,8 @@ class Profile:
             pointer.validate()
             # Los perfiles anteriores al Sprint 4 no tienen esta sección.
             keyboard = KeyboardSettings.from_dict(raw.get("keyboard", {}))
+            # Los perfiles anteriores al Sprint 6 no tienen esta sección.
+            feedback = FeedbackSettings.from_dict(raw.get("feedback", {}))
             return cls(
                 id=str(raw["id"]),
                 name=str(raw["name"]),
@@ -167,6 +174,7 @@ class Profile:
                 calibration=None if calibration is None else Calibration.from_dict(calibration),
                 pointer=pointer,
                 keyboard=keyboard,
+                feedback=feedback,
                 created_at=str(raw.get("created_at", _now())),
                 updated_at=str(raw.get("updated_at", _now())),
             )

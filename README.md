@@ -170,6 +170,19 @@ veces seguidas: con 3 aperturas en 2 s, los gestos de la boca (abrir, sonreír, 
 hasta 1,2 s después de la última, así que conversar o reír hablando no hace doble clic ni
 arrastra. La pestaña **Eventos** avisa cuando empieza y termina esa espera.
 
+**Retroalimentación e indicador de estado (P3-44).** Abajo a la derecha de la pantalla hay
+siempre un indicador, visible sobre cualquier aplicación y sin robar el foco ni los clics:
+**● Activo** (verde), **● En pausa** (amarillo), **● Sin rostro** (rojo), **Detenido** o
+**Activo, cursor desactivado**. Cada gesto reconocido destella en el indicador con su acción
+(«✔ Clic izquierdo») y suena un aviso. La pausa tiene su propio sonido y cartel (P3-19). En
+la pestaña **Avisos** se puede desactivar el sonido (los destellos siguen) o el indicador.
+
+**Recordatorios de descanso (P3-45).** En **Avisos** se activa el recordatorio y su intervalo
+(1–180 min de uso; 30 por defecto). Solo cuenta el tiempo con el control activo y el rostro
+visible; una pausa de 2 minutos o más cuenta como descanso y reinicia la cuenta. El aviso
+aparece arriba a la derecha con un sonido, no quita el foco, no pausa el control y se cierra
+solo a los 20 s. **Probar aviso de descanso** lo muestra al momento.
+
 Los perfiles existentes conservan su mapeo. Para usar el nuevo, pulse **Restaurar valores** y
 luego **Calibrar** (los guiños venían desactivados y no estaban calibrados).
 
@@ -256,6 +269,7 @@ reales: las pruebas simuladas no demuestran FPS ni robustez física. Consulte ta
 - `quick_actions.py`: acciones rápidas del sistema (atajos de ventanas y abrir aplicaciones)
   y backend pynput.
 - `prediction.py`, `lexicon_es.py`: predicción de palabras con diccionario local y aprendizaje.
+- `feedback.py`: estado que muestra el indicador, sonidos y temporizador de descanso.
 - `ui_calibration.py`, `ui_profile.py`, `ui_widgets.py`, `ui_keyboard.py`,
   `ui_quick_menu.py`: asistente, panel de gestos, puntero virtual, ventana del teclado y menú de
   acciones rápidas.

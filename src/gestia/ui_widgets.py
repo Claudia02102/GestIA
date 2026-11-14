@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, QPointF, QRectF, Qt
+from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPaintEvent, QPen
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from gestia.calibration import CORNER_ZONE, CORNERS
+from gestia.feedback import STATUS_COLOR, STATUS_TEXT, StatusKind
 
 
 class PauseIndicator(QWidget):
@@ -42,6 +43,119 @@ class PauseIndicator(QWidget):
         area = screen.availableGeometry()
         self.move(QPoint(area.x() + (area.width() - self.width()) // 2, area.y() + 12))
         self.show()
+
+
+OVERLAY_FLAGS = (
+    Qt.WindowType.Tool
+    | Qt.WindowType.FramelessWindowHint
+    | Qt.WindowType.WindowStaysOnTopHint
+    | Qt.WindowType.WindowDoesNotAcceptFocus
+)
+
+
+def _make_overlay(widget: QWidget) -> None:
+    """Ventana que se ve sobre cualquier aplicación sin robar el foco ni los clics."""
+    widget.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+    widget.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+    # Sin esto una ventana de nivel superior ignora el borde de su hoja de estilo.
+    widget.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
+
+
+class StatusIndicator(QWidget):
+    """P3-44: estado siempre visible en una esquina y destello al reconocer un gesto."""
+
+    FLASH_MS = 1200
+
+    def __init__(self) -> None:
+        super().__init__(None, OVERLAY_FLAGS)
+        _make_overlay(self)
+        self.status: StatusKind = StatusKind.STOPPED
+        self.flashing = ""
+        self.label = QLabel()
+        font = self.label.font()
+        font.setPixelSize(16)
+        font.setBold(True)
+        self.label.setFont(font)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 8, 14, 8)
+        layout.addWidget(self.label)
+        self._flash_timer = QTimer(self)
+        self._flash_timer.setSingleShot(True)
+        self._flash_timer.timeout.connect(self._end_flash)
+        self._render()
+
+    def set_status(self, status: StatusKind) -> None:
+        if status is not self.status:
+            self.status = status
+            self._render()
+
+    def flash(self, text: str) -> None:
+        """Señal visual de gesto reconocido; no depende de que el sonido esté activo."""
+        self.flashing = text
+        self._flash_timer.start(self.FLASH_MS)
+        self._render()
+
+    def _end_flash(self) -> None:
+        self.flashing = ""
+        self._render()
+
+    def _render(self) -> None:
+        color = STATUS_COLOR[self.status]
+        if self.flashing:
+            self.label.setText(f"✔  {self.flashing}")
+            background, border, ink = color, color, "#ffffff"
+        else:
+            self.label.setText(f"●  {STATUS_TEXT[self.status]}")
+            background, border, ink = "#ffffff", color, color
+        self.setStyleSheet(
+            f"QWidget {{ background: {background}; border: 2px solid {border}; "
+            f"border-radius: 4px; }} QLabel {{ border: none; color: {ink}; }}"
+        )
+        self.adjustSize()
+        self._place()
+
+    def _place(self) -> None:
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        area = screen.availableGeometry()
+        self.move(QPoint(area.right() - self.width() - 16, area.bottom() - self.height() - 16))
+
+
+class BreakReminder(QWidget):
+    """P3-45: aviso de descanso que no interrumpe: no toma el foco y se cierra solo."""
+
+    VISIBLE_MS = 20000
+
+    def __init__(self) -> None:
+        super().__init__(None, OVERLAY_FLAGS)
+        _make_overlay(self)
+        self.setStyleSheet(
+            "QWidget { background: #e0f2fe; border: 2px solid #0284c7; border-radius: 4px; }"
+            "QLabel { border: none; color: #0c4a6e; }"
+        )
+        self.title = QLabel("Hora de descansar")
+        font = self.title.font()
+        font.setPixelSize(18)
+        font.setBold(True)
+        self.title.setFont(font)
+        self.message = QLabel()
+        self.message.setWordWrap(True)
+        self.message.setFixedWidth(360)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.addWidget(self.title)
+        layout.addWidget(self.message)
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.timeout.connect(self.hide)
+
+    def show_reminder(self, message: str) -> None:
+        self.message.setText(message)
+        self.adjustSize()
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        area = screen.availableGeometry()
+        self.move(QPoint(area.right() - self.width() - 16, area.y() + 16))
+        self.show()
+        self._hide_timer.start(self.VISIBLE_MS)
 
 
 class PointerPreview(QWidget):
