@@ -31,9 +31,10 @@ from gestia.gestures import (
     selection_gestures,
 )
 from gestia.keyboard import KeyboardSettings
+from gestia.theme import AppearanceSettings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 INDEX_FILE = "index.json"
 EXPORT_FORMAT = "gestia-profile"
 EXPORT_VERSION = 1
@@ -57,6 +58,8 @@ class Profile:
     keyboard: KeyboardSettings = field(default_factory=KeyboardSettings)
     # P3-44 y P3-45: sonido, indicador de estado y recordatorios de descanso.
     feedback: FeedbackSettings = field(default_factory=FeedbackSettings)
+    # Modo claro u oscuro: preferencia personal, «Restaurar valores» no la cambia.
+    appearance: AppearanceSettings = field(default_factory=AppearanceSettings)
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
 
@@ -133,6 +136,7 @@ class Profile:
             "pointer": asdict(self.pointer),
             "keyboard": self.keyboard.to_dict(),
             "feedback": self.feedback.to_dict(),
+            "appearance": self.appearance.to_dict(),
         }
 
     @classmethod
@@ -165,6 +169,7 @@ class Profile:
             keyboard = KeyboardSettings.from_dict(raw.get("keyboard", {}))
             # Los perfiles anteriores al Sprint 6 no tienen esta sección.
             feedback = FeedbackSettings.from_dict(raw.get("feedback", {}))
+            appearance = AppearanceSettings.from_dict(raw.get("appearance", {}))
             return cls(
                 id=str(raw["id"]),
                 name=str(raw["name"]),
@@ -175,6 +180,7 @@ class Profile:
                 pointer=pointer,
                 keyboard=keyboard,
                 feedback=feedback,
+                appearance=appearance,
                 created_at=str(raw.get("created_at", _now())),
                 updated_at=str(raw.get("updated_at", _now())),
             )

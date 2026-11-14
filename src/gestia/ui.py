@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gestia import theme
 from gestia.app_context import foreground_app
 from gestia.calibration import Calibration, Recenterer, RecenterStatus
 from gestia.config import AppConfig, resolve_from_project
@@ -59,20 +61,35 @@ from gestia.ui_calibration import CalibrationDialog
 from gestia.ui_keyboard import KeyboardWindow
 from gestia.ui_profile import GesturePanel
 from gestia.ui_quick_menu import QuickMenuWindow
-from gestia.ui_widgets import BreakReminder, PauseIndicator, PointerPreview, StatusIndicator
+from gestia.ui_widgets import (
+    BreakReminder,
+    LogoMark,
+    PauseIndicator,
+    PointerPreview,
+    StatusIndicator,
+    ToggleSwitch,
+)
 from gestia.worker import PipelineWorker
 
 LOGGER = logging.getLogger(__name__)
 BREAK_TICK_MS = 1000
 PAUSE_HOTKEY = "<ctrl>+<alt>+p"
 ACTIVE_APP_POLL_MS = 1000
+# Cada modo usa un color de la paleta (``theme.Palette``), válido en modo claro y oscuro.
 MODE_TEXT = {
-    ControlMode.DISABLED: ("Cursor: control desactivado", "#64748b"),
-    ControlMode.NO_FACE: ("Cursor: detenido (sin rostro)", "#ea580c"),
-    ControlMode.NORMAL: ("Cursor: controlado por la cabeza", "#16a34a"),
-    ControlMode.DRAGGING: ("Cursor: arrastrando", "#2563eb"),
-    ControlMode.SCROLLING: ("Cursor: modo desplazamiento", "#7c3aed"),
-    ControlMode.PAUSED: ("Cursor: EN PAUSA", "#ca8a04"),
+    ControlMode.DISABLED: ("Cursor: control desactivado", "text_muted"),
+    ControlMode.NO_FACE: ("Cursor: detenido (sin rostro)", "danger"),
+    ControlMode.NORMAL: ("Cursor: controlado por la cabeza", "success"),
+    ControlMode.DRAGGING: ("Cursor: arrastrando", "info"),
+    ControlMode.SCROLLING: ("Cursor: modo desplazamiento", "special"),
+    ControlMode.PAUSED: ("Cursor: EN PAUSA", "warning"),
+}
+STATE_COLOR = {
+    TrackingState.STOPPED: "text_muted",
+    TrackingState.SEARCHING: "warning",
+    TrackingState.TRACKING: "success",
+    TrackingState.LOST: "danger",
+    TrackingState.ERROR: "danger",
 }
 
 
@@ -140,7 +157,7 @@ class MainWindow(QMainWindow):
         self.hotkeys = HotkeyBridge()
         self.hotkeys.triggered.connect(self.toggle_pause)
         self.setWindowTitle("GestIA — seguimiento facial")
-        self.resize(1280, 760)
+        self.resize(1360, 860)
         self._build_ui()
         self._load_profiles()
         self._set_state(TrackingState.STOPPED)
@@ -156,7 +173,19 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self) -> None:
         central = QWidget()
-        layout = QVBoxLayout(central)
+        outer = QVBoxLayout(central)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(self._build_header())
+        content = QVBoxLayout()
+        content.setContentsMargins(20, 16, 20, 20)
+        content.setSpacing(16)
+        outer.addLayout(content, 1)
+        session = self._card()
+        layout = QVBoxLayout(session)
+        layout.setContentsMargins(18, 14, 18, 14)
+        layout.setSpacing(10)
+        content.addWidget(session)
         controls = QHBoxLayout()
         self.camera_selector = QComboBox()
         candidates = list(dict.fromkeys(self.config.camera.candidate_indices))
@@ -168,6 +197,7 @@ class MainWindow(QMainWindow):
             max(0, self.camera_selector.findData(self.config.camera.index))
         )
         self.start_button = QPushButton("Iniciar")
+        self.start_button.setProperty("primary", True)
         self.stop_button = QPushButton("Detener")
         self.stop_button.setEnabled(False)
         self.start_button.clicked.connect(self.start_tracking)
@@ -229,7 +259,7 @@ class MainWindow(QMainWindow):
         self.mode_label = QLabel()
         hotkey = "Ctrl+Alt+P pausa o reanuda desde cualquier aplicación."
         hotkey_label = QLabel(hotkey if self.hotkeys.active else "")
-        hotkey_label.setStyleSheet("color: #64748b;")
+        hotkey_label.setObjectName("muted")
         for widget in (
             self.control_check, self.pause_button, self.keyboard_button,
             self.quick_menu_button, self.mode_label, hotkey_label,
@@ -239,18 +269,23 @@ class MainWindow(QMainWindow):
         layout.addLayout(control_bar)
 
         body = QHBoxLayout()
-        left = QVBoxLayout()
-        right = QVBoxLayout()
-        body.addLayout(left, 3)
-        body.addLayout(right, 2)
-        layout.addLayout(body, 1)
+        body.setSpacing(16)
+        left_card, right_card = self._card(), self._card()
+        left, right = QVBoxLayout(left_card), QVBoxLayout(right_card)
+        for box, title in ((left, "CÁMARA"), (right, "PUNTERO Y AJUSTES")):
+            box.setContentsMargins(18, 16, 18, 18)
+            box.setSpacing(10)
+            eyebrow = QLabel(title)
+            eyebrow.setObjectName("eyebrow")
+            box.addWidget(eyebrow)
+        body.addWidget(left_card, 3)
+        body.addWidget(right_card, 2)
+        content.addLayout(body, 1)
 
         self.preview = QLabel("Presione Iniciar para abrir la cámara")
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview.setMinimumSize(640, 480)
-        self.preview.setStyleSheet(
-            "background: #17191c; color: #cbd5e1; border-radius: 8px;"
-        )
+        self.preview.setMinimumSize(480, 360)
+        self.preview.setObjectName("preview")
         left.addWidget(self.preview, 1)
         self.state_label = QLabel()
         left.addWidget(self.state_label)
@@ -270,9 +305,12 @@ class MainWindow(QMainWindow):
             "procesan localmente y no se guardan."
         )
         guidance.setWordWrap(True)
+        guidance.setObjectName("guidance")
         left.addWidget(guidance)
 
-        right.addWidget(QLabel("Puntero (vista previa de la pantalla):"))
+        pointer_title = QLabel("Vista previa de la pantalla")
+        pointer_title.setObjectName("muted")
+        right.addWidget(pointer_title)
         self.pointer = PointerPreview()
         self.pointer.setMinimumHeight(170)
         right.addWidget(self.pointer)
@@ -281,6 +319,69 @@ class MainWindow(QMainWindow):
         self.panel.reminder_test_requested.connect(self.show_break_reminder)
         right.addWidget(self.panel, 1)
         self.setCentralWidget(central)
+
+    @staticmethod
+    def _card() -> QFrame:
+        card = QFrame()
+        card.setObjectName("card")
+        return card
+
+    def _build_header(self) -> QFrame:
+        """Cabecera como la de la landing: marca a la izquierda y modo oscuro a la derecha."""
+        header = QFrame()
+        header.setObjectName("header")
+        bar = QHBoxLayout(header)
+        bar.setContentsMargins(20, 10, 20, 10)
+        bar.setSpacing(10)
+        brand = QLabel()
+        brand.setObjectName("brand")
+        self.brand_label = brand
+        tagline = QLabel("ACCESIBILIDAD · GESTOS FACIALES · IA")
+        tagline.setObjectName("pill")
+        self.dark_switch = ToggleSwitch("Modo oscuro")
+        self.dark_switch.toggled.connect(self._dark_toggled)
+        dark_label = QLabel("Modo oscuro")
+        dark_label.setObjectName("muted")
+        dark_label.setBuddy(self.dark_switch)
+        bar.addWidget(LogoMark())
+        bar.addWidget(brand)
+        bar.addSpacing(8)
+        bar.addWidget(tagline)
+        bar.addStretch()
+        bar.addWidget(dark_label)
+        bar.addWidget(self.dark_switch)
+        return header
+
+    # --- Estilo visual y modo oscuro --------------------------------------------------------
+
+    def _apply_theme(self) -> None:
+        dark = self.profile.appearance.dark_mode
+        palette = theme.apply(dark)
+        self.dark_switch.blockSignals(True)
+        self.dark_switch.setChecked(dark)
+        self.dark_switch.blockSignals(False)
+        self.brand_label.setText(
+            f'Gest<span style="color: {palette.accent_text};">IA</span>'
+        )
+        for window in (self.keyboard, self.quick_menu):
+            if window is not None:
+                window.setStyleSheet(theme.keyboard_stylesheet(palette))
+        # Los textos con color de estado se repintan con la paleta nueva.
+        self._set_state(self.tracking_state)
+        self._update_profile_status()
+        if self.controller is not None and self.control_mode is not None:
+            text, token = MODE_TEXT[self.control_mode]
+            self.mode_label.setStyleSheet(
+                f"font-weight: 600; color: {getattr(palette, token)};"
+            )
+        self.pointer.update()
+
+    @Slot(bool)
+    def _dark_toggled(self, dark: bool) -> None:
+        self.profile.appearance.dark_mode = dark
+        self._save_profile()
+        self._apply_theme()
+        self.panel.log_message("Modo oscuro activado." if dark else "Modo claro activado.")
 
     # --- Perfiles -------------------------------------------------------------------------
 
@@ -301,6 +402,7 @@ class MainWindow(QMainWindow):
         self._update_profile_status()
         self._apply_pointer_settings()
         self._apply_feedback_settings()
+        self._apply_theme()
         if self.keyboard is not None:
             self.keyboard.set_settings(profile.keyboard)
         if self.worker is not None:
@@ -308,11 +410,12 @@ class MainWindow(QMainWindow):
 
     def _update_profile_status(self) -> None:
         if self.profile.calibration is None:
-            text, color = "Sin calibrar", "#ca8a04"
+            text, token = "Sin calibrar", "warning"
         else:
-            text, color = "Calibrado", "#16a34a"
+            text, token = "Calibrado", "success"
         self.profile_status.setText(text)
-        self.profile_status.setStyleSheet(f"font-weight: 600; color: {color};")
+        color = getattr(theme.current(), token)
+        self.profile_status.setStyleSheet(f"font-weight: 700; color: {color};")
 
     def _save_profile(self) -> None:
         try:
@@ -423,7 +526,8 @@ class MainWindow(QMainWindow):
         if status.mode is not self.control_mode:
             self.control_mode = status.mode
             self._refresh_status()
-        text, color = MODE_TEXT[status.mode]
+        text, token = MODE_TEXT[status.mode]
+        color = getattr(theme.current(), token)
         if status.dwell_progress > 0:
             text += f" · permanencia {status.dwell_progress:.0%}"
         self.mode_label.setText(text)
@@ -833,17 +937,9 @@ class MainWindow(QMainWindow):
 
     @Slot(object)
     def _set_state(self, state: TrackingState) -> None:
-        colors = {
-            TrackingState.STOPPED: "#64748b",
-            TrackingState.SEARCHING: "#ca8a04",
-            TrackingState.TRACKING: "#16a34a",
-            TrackingState.LOST: "#ea580c",
-            TrackingState.ERROR: "#dc2626",
-        }
+        color = getattr(theme.current(), STATE_COLOR[state])
         self.state_label.setText(f"Estado: {STATE_TEXT[state]}")
-        self.state_label.setStyleSheet(
-            f"font-size: 18px; font-weight: 600; color: {colors[state]};"
-        )
+        self.state_label.setStyleSheet(f"font-size: 18px; font-weight: 700; color: {color};")
         self.tracking_state = state
         self._refresh_status()
 

@@ -13,6 +13,7 @@ from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtGui import QGuiApplication, QShowEvent
 from PySide6.QtWidgets import QLabel, QPushButton, QStackedWidget, QVBoxLayout, QWidget
 
+from gestia import theme
 from gestia.quick_actions import (
     NEEDS_CONFIRMATION,
     QUICK_ACTION_TEXT,
@@ -20,7 +21,7 @@ from gestia.quick_actions import (
     SystemBackend,
     run_quick_action,
 )
-from gestia.ui_keyboard import STYLE, _no_activate
+from gestia.ui_keyboard import _no_activate
 
 BUTTON_WIDTH, BUTTON_HEIGHT = 220, 48
 WINDOW_ACTIONS = (
@@ -49,7 +50,7 @@ class QuickMenuWindow(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setWindowTitle("GestIA — Acciones rápidas")
-        self.setStyleSheet(STYLE)
+        self.setStyleSheet(theme.keyboard_stylesheet(theme.current()))
         self.backend = backend
         self._native_done = False
         self.buttons: dict[QuickAction, QPushButton] = {}

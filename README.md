@@ -183,6 +183,15 @@ visible; una pausa de 2 minutos o más cuenta como descanso y reinicia la cuenta
 aparece arriba a la derecha con un sonido, no quita el foco, no pausa el control y se cierra
 solo a los 20 s. **Probar aviso de descanso** lo muestra al momento.
 
+**Estilo visual y modo oscuro.** La aplicación usa el lenguaje visual de la landing: fondo
+crema `#f3efe6`, tarjetas blancas `#ffffff` redondeadas, tinta `#13171c` y el naranja de marca
+`#ff6a2b` en botones principales, pestañas activas, interruptores y deslizadores. El
+interruptor **Modo oscuro** de la cabecera cambia toda la aplicación al instante (también el
+teclado y el menú rápido) y se guarda en el perfil; *Restaurar valores* no lo cambia. El
+asistente de calibración es siempre oscuro, para concentrarse en la instrucción. Contraste
+WCAG 2.1 AA (texto ≥ 4,5:1, comprobado en las pruebas): como el naranja da 2,9:1 con el
+blanco, el texto sobre él es tinta y el texto naranja en modo claro usa el tono `#b93c0d`.
+
 Los perfiles existentes conservan su mapeo. Para usar el nuevo, pulse **Restaurar valores** y
 luego **Calibrar** (los guiños venían desactivados y no estaban calibrados).
 
@@ -270,6 +279,7 @@ reales: las pruebas simuladas no demuestran FPS ni robustez física. Consulte ta
   y backend pynput.
 - `prediction.py`, `lexicon_es.py`: predicción de palabras con diccionario local y aprendizaje.
 - `feedback.py`: estado que muestra el indicador, sonidos y temporizador de descanso.
+- `theme.py`: paleta de marca (modo claro y oscuro) y hojas de estilo de toda la interfaz.
 - `ui_calibration.py`, `ui_profile.py`, `ui_widgets.py`, `ui_keyboard.py`,
   `ui_quick_menu.py`: asistente, panel de gestos, puntero virtual, ventana del teclado y menú de
   acciones rápidas.

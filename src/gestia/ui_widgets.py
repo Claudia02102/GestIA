@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer
+from PySide6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPaintEvent, QPen
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QAbstractButton, QLabel, QVBoxLayout, QWidget
 
+from gestia import theme
 from gestia.calibration import CORNER_ZONE, CORNERS
 from gestia.feedback import STATUS_COLOR, STATUS_TEXT, StatusKind
 
@@ -128,10 +129,6 @@ class BreakReminder(QWidget):
     def __init__(self) -> None:
         super().__init__(None, OVERLAY_FLAGS)
         _make_overlay(self)
-        self.setStyleSheet(
-            "QWidget { background: #e0f2fe; border: 2px solid #0284c7; border-radius: 4px; }"
-            "QLabel { border: none; color: #0c4a6e; }"
-        )
         self.title = QLabel("Hora de descansar")
         font = self.title.font()
         font.setPixelSize(18)
@@ -149,6 +146,12 @@ class BreakReminder(QWidget):
         self._hide_timer.timeout.connect(self.hide)
 
     def show_reminder(self, message: str) -> None:
+        p = theme.current()
+        self.setStyleSheet(
+            f"QWidget {{ background: {p.surface}; border: 2px solid {p.accent}; "
+            f"border-radius: 4px; }} QLabel {{ border: none; color: {p.text}; }}"
+        )
+        self.title.setStyleSheet(f"color: {p.accent_text};")
         self.message.setText(message)
         self.adjustSize()
         screen = self.screen() or QGuiApplication.primaryScreen()
@@ -156,6 +159,75 @@ class BreakReminder(QWidget):
         self.move(QPoint(area.right() - self.width() - 16, area.y() + 16))
         self.show()
         self._hide_timer.start(self.VISIBLE_MS)
+
+
+class ToggleSwitch(QAbstractButton):
+    """Interruptor tipo píldora (modo oscuro); se usa con clic, Espacio o un gesto de clic."""
+
+    def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setCheckable(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setAccessibleName(text)
+        self.setText(text)
+        self.setFixedSize(46, 26)
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        return QSize(46, 26)
+
+    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802
+        p = theme.current()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        track = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        on = self.isChecked()
+        painter.setPen(QPen(QColor(p.accent if on else p.border), 1))
+        painter.setBrush(QColor(p.accent if on else p.surface_alt))
+        painter.drawRoundedRect(track, track.height() / 2, track.height() / 2)
+        diameter = track.height() - 6
+        x = track.right() - diameter - 3 if on else track.left() + 3
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(theme.WHITE if on else p.text_muted))
+        painter.drawEllipse(QRectF(x, track.top() + 3, diameter, diameter))
+        if self.hasFocus():
+            painter.setPen(QPen(QColor(p.accent), 1, Qt.PenStyle.DotLine))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(track, track.height() / 2, track.height() / 2)
+        painter.end()
+
+
+class LogoMark(QWidget):
+    """Ícono de GestIA como en la landing: cuadrado naranja redondeado con una cara."""
+
+    def __init__(self, size: int = 34, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(size, size)
+
+    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        side = float(self.width())
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(theme.ORANGE))
+        painter.drawRoundedRect(QRectF(0, 0, side, side), side * 0.3, side * 0.3)
+        pen = QPen(QColor(theme.WHITE), side * 0.07)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        inset, arm = side * 0.24, side * 0.14
+        for x, y, dx, dy in (
+            (inset, inset, 1, 1), (side - inset, inset, -1, 1),
+            (inset, side - inset, 1, -1), (side - inset, side - inset, -1, -1),
+        ):  # esquinas del encuadre de la cámara
+            painter.drawLine(QPointF(x, y), QPointF(x + dx * arm, y))
+            painter.drawLine(QPointF(x, y), QPointF(x, y + dy * arm))
+        eye = side * 0.05
+        painter.setBrush(QColor(theme.WHITE))
+        painter.drawEllipse(QPointF(side * 0.41, side * 0.44), eye, eye)
+        painter.drawEllipse(QPointF(side * 0.59, side * 0.44), eye, eye)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawArc(QRectF(side * 0.38, side * 0.46, side * 0.24, side * 0.16), 200 * 16,
+                        140 * 16)
+        painter.end()
 
 
 class PointerPreview(QWidget):
@@ -183,9 +255,10 @@ class PointerPreview(QWidget):
         screen = QRectF(
             area.center().x() - width / 2, area.center().y() - height / 2, width, height
         )
-        painter.setPen(QPen(QColor("#475569"), 2))
-        painter.setBrush(QColor("#0f172a"))
-        painter.drawRoundedRect(screen, 6, 6)
+        p = theme.current()
+        painter.setPen(QPen(QColor(p.border), 2))
+        painter.setBrush(QColor(p.preview))
+        painter.drawRoundedRect(screen, 10, 10)
         if self.show_corners:
             size_x = max(screen.width() * CORNER_ZONE * 2, 18)
             size_y = max(screen.height() * CORNER_ZONE * 2, 18)
@@ -205,10 +278,10 @@ class PointerPreview(QWidget):
             x, y = self.pointer
             center = QPointF(screen.left() + x * screen.width(), screen.top() + y * screen.height())
             radius = max(min(screen.width(), screen.height()) * 0.03, 5)
-            painter.setPen(QPen(QColor("#e2e8f0"), 2))
-            painter.setBrush(QColor("#38bdf8"))
+            painter.setPen(QPen(QColor(theme.WHITE), 2))
+            painter.setBrush(QColor(p.accent))
             painter.drawEllipse(center, radius, radius)
         else:
-            painter.setPen(QColor("#94a3b8"))
+            painter.setPen(QColor("#9aa1a9"))
             painter.drawText(screen, Qt.AlignmentFlag.AlignCenter, "Sin puntero")
         painter.end()

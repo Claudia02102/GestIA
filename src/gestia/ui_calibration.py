@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gestia import theme
 from gestia.calibration import Calibration, CalibrationSession, SessionUpdate, Step, StepKind
 from gestia.config import CalibrationConfig
 from gestia.domain import DisplayPacket, TrackingState
@@ -50,7 +51,16 @@ class CalibrationDialog(QDialog):
         self.session = CalibrationSession(gestures, config)
         self._shown_index = -1
         self.setWindowTitle("GestIA — asistente de calibración")
-        self.setStyleSheet("QDialog { background: #0b1120; } QLabel { color: #e2e8f0; }")
+        # Siempre oscuro: a pantalla completa ayuda a concentrarse en la instrucción.
+        p = theme.DARK
+        self.palette_ = p
+        self.setStyleSheet(
+            f"QDialog {{ background: {p.background}; }} QLabel {{ color: {p.text}; }}"
+            f"QProgressBar {{ background: {p.border}; border: none; border-radius: 6px; }}"
+            f"QProgressBar::chunk {{ background: {p.accent}; border-radius: 6px; }}"
+            f"QPushButton {{ background: {p.surface_alt}; color: {p.text}; "
+            f"border: 1px solid {p.border}; border-radius: 16px; padding: 8px 16px; }}"
+        )
         layout = QHBoxLayout(self)
 
         self.steps_list = QListWidget()
@@ -58,7 +68,9 @@ class CalibrationDialog(QDialog):
         self.steps_list.setMinimumWidth(240)
         self.steps_list.setMaximumWidth(320)
         self.steps_list.setStyleSheet(
-            "QListWidget { background: #111827; color: #cbd5e1; font-size: 15px; }"
+            f"QListWidget {{ background: {p.surface}; color: {p.text}; font-size: 15px; "
+            f"border: 1px solid {p.border}; border-radius: 12px; }}"
+            f"QListWidget::item:selected {{ background: {p.accent_soft}; color: {p.accent}; }}"
         )
         for step in self.session.steps[:-1]:
             self.steps_list.addItem(QListWidgetItem(step_title(step)))
@@ -66,7 +78,7 @@ class CalibrationDialog(QDialog):
 
         center = QVBoxLayout()
         self.counter = QLabel()
-        self.counter.setStyleSheet("font-size: 16px; color: #94a3b8;")
+        self.counter.setStyleSheet(f"font-size: 16px; color: {p.accent}; font-weight: 700;")
         self.instruction = QLabel()
         self.instruction.setWordWrap(True)
         self.instruction.setStyleSheet("font-size: 32px; font-weight: 700;")
@@ -76,7 +88,7 @@ class CalibrationDialog(QDialog):
         self.progress.setFixedHeight(22)
         self.feedback = QLabel(" ")
         self.feedback.setWordWrap(True)
-        self.feedback.setStyleSheet("font-size: 20px; color: #fbbf24;")
+        self.feedback.setStyleSheet(f"font-size: 20px; color: {p.warning};")
         self.pointer = PointerPreview(show_corners=True)
         self.pointer.setMinimumSize(480, 270)
         self.pointer.hide()
@@ -86,7 +98,7 @@ class CalibrationDialog(QDialog):
             f"{config.max_gesture_attempts} intentos."
         )
         hint.setWordWrap(True)
-        hint.setStyleSheet("font-size: 15px; color: #94a3b8;")
+        hint.setStyleSheet(f"font-size: 15px; color: {p.text_muted};")
         center.addWidget(self.counter)
         center.addWidget(self.instruction)
         center.addWidget(self.progress)
@@ -100,7 +112,7 @@ class CalibrationDialog(QDialog):
         self.camera = QLabel("Esperando cámara…")
         self.camera.setFixedSize(320, 240)
         self.camera.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.camera.setStyleSheet("background: #17191c; border-radius: 6px;")
+        self.camera.setStyleSheet(f"background: {p.preview}; border-radius: 12px;")
         cancel = QPushButton("Cancelar (asistente)")
         cancel.clicked.connect(self.reject)
         side.addWidget(self.camera)
@@ -139,8 +151,9 @@ class CalibrationDialog(QDialog):
         if update.step_completed or update.step_failed:
             QApplication.beep()
         if update.message:
-            color = "#f87171" if update.step_failed else (
-                "#4ade80" if update.step_completed else "#fbbf24"
+            p = self.palette_
+            color = p.danger if update.step_failed else (
+                p.success if update.step_completed else p.warning
             )
             self.feedback.setStyleSheet(f"font-size: 20px; color: {color};")
             self.feedback.setText(update.message)

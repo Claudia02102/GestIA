@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gestia import theme
 from gestia.keyboard import (
     COLUMNS,
     LAYOUTS,
@@ -36,16 +37,6 @@ from gestia.prediction import WordPredictor
 
 SPACING = 4
 SUGGESTIONS = 3
-STYLE = """
-QPushButton { background: #f1f5f9; color: #0f172a; border: 1px solid #94a3b8;
-              border-radius: 6px; }
-QPushButton:hover { background: #bfdbfe; border-color: #2563eb; }
-QPushButton:pressed { background: #60a5fa; }
-QPushButton[role="special"] { background: #e2e8f0; }
-QPushButton[role="suggestion"] { background: #dcfce7; font-weight: 600; }
-QPushButton[role="active"] { background: #fde68a; border-color: #ca8a04; }
-QPushButton:disabled { color: #94a3b8; background: #f8fafc; }
-"""
 
 # Teclas especiales a la derecha de las filas de caracteres: (fila, columna, ancho).
 SIDE_KEYS: tuple[tuple[SpecialKey, int, int, int], ...] = (
@@ -76,7 +67,7 @@ class KeyboardWindow(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setWindowTitle("GestIA — Teclado")
-        self.setStyleSheet(STYLE)
+        self.setStyleSheet(theme.keyboard_stylesheet(theme.current()))
         self.backend = backend
         self.settings = settings
         self.session = TypingSession(backend, WordPredictor(settings.vocabulary), self.learned.emit)
