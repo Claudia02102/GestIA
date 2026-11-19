@@ -286,6 +286,7 @@ landmarks ni información de identidad.
 
 ```powershell
 ruff check .
+ruff format --check .
 pytest
 ```
 
@@ -299,6 +300,27 @@ reales: las pruebas simuladas no demuestran FPS ni robustez física. Consulte ta
 [matriz de aceptación del Sprint 3](docs/MATRIZ_PRUEBAS_SPRINT_3.md), el
 [informe del Sprint 4](docs/INFORME_SPRINT_4.md) y la
 [matriz de aceptación del Sprint 4](docs/MATRIZ_PRUEBAS_SPRINT_4.md).
+
+## Integración continua y seguridad
+
+Cada pull request y cada push a `main` ejecutan el workflow [CI](.github/workflows/ci.yml) en
+Windows con Python 3.11 y 3.12 (P3-55):
+
+| Control | Herramienta | Qué bloquea |
+|---|---|---|
+| Estilo y formato | `ruff check .`, `ruff format --check .` | Errores de estilo o código sin formatear |
+| Pruebas | `pytest -m "not camara and not modelo"` | Cualquier prueba fallida |
+| Código inseguro (SAST, P3-59) | Reglas `S` de ruff (equivalentes a Bandit) | Cualquier hallazgo; las excepciones van por línea con `# noqa: Sxxx` y su motivo |
+| Dependencias (P3-56) | `pip-audit` (solo Python 3.12) | Cualquier vulnerabilidad conocida no documentada |
+
+Las pruebas que necesiten la cámara o el modelo descargado se marcan con
+`@pytest.mark.camara` o `@pytest.mark.modelo` y el CI las excluye.
+
+**Excepciones de dependencias.** `pip-audit` no informa la gravedad, así que todo aviso falla
+el CI. Si una vulnerabilidad no tiene corrección compatible, se documenta en
+[.github/pip-audit-excepciones.txt](.github/pip-audit-excepciones.txt) con su ID, el motivo y
+la fecha de revisión. **Dependabot** ([.github/dependabot.yml](.github/dependabot.yml)) abre
+cada lunes PRs con las actualizaciones de librerías y de acciones de GitHub.
 
 ## Problemas frecuentes
 

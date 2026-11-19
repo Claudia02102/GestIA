@@ -1,0 +1,26 @@
+# P3-56: Dependabot revisa cada semana las librerías de Python (pyproject.toml) y las
+# acciones de GitHub de los workflows, y abre un PR por actualización. El CI de cada PR
+# confirma que la nueva versión no rompe nada antes de unirla.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: America/Lima
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: America/Lima
+    commit-message:
+      prefix: "ci"
+    groups:
+      acciones:
+        patterns: ["*"]

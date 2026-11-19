@@ -2,7 +2,8 @@
 #
 # Cada pull request y cada push a main se revisan con ruff (estilo y formato) y pytest en
 # Windows, el sistema donde corre GestIA (pynput, PySide6 y os.startfile dependen de él).
-# Es la base de los escaneos de seguridad de la épica (dependencias, secretos y SAST).
+# También corre los controles de seguridad: reglas S de ruff (SAST, P3-59) y pip-audit
+# (dependencias, P3-56).
 name: CI
 
 on:
@@ -53,6 +54,21 @@ jobs:
       # Sin cámara ni modelo descargado: las pruebas marcadas «camara» o «modelo» se excluyen.
       - name: Pytest
         run: python -m pytest -m "not camara and not modelo" --junitxml=reporte-pruebas.xml
+
+      # P3-56: vulnerabilidades conocidas en las librerías instaladas (Windows, Python 3.12).
+      # pip-audit no da la gravedad, así que cualquier aviso falla el CI salvo que esté
+      # documentado en .github/pip-audit-excepciones.txt (ID, motivo y fecha de revisión).
+      - name: Dependencias vulnerables (pip-audit)
+        if: matrix.python == '3.12'
+        shell: pwsh
+        run: |
+          python -m pip freeze --exclude-editable > requisitos-auditados.txt
+          python -m pip install pip-audit==2.10.1
+          $ignorar = Get-Content .github/pip-audit-excepciones.txt |
+            Where-Object { $_.Trim() -and -not $_.TrimStart().StartsWith("#") } |
+            ForEach-Object { ($_ -split "\|")[0].Trim() -split "\s+" } |
+            ForEach-Object { "--ignore-vuln"; $_ }
+          python -m pip_audit -r requisitos-auditados.txt --no-deps --disable-pip --desc on @ignorar
 
       - name: Reporte de pruebas
         if: always()
