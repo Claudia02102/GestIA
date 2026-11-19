@@ -16,7 +16,7 @@ dependencies = [
   "pynput==1.8.1",
 ]
 [project.optional-dependencies]
-dev = ["pytest==9.0.3", "ruff==0.9.10"]
+dev = ["pre-commit==4.7.0", "pytest==9.0.3", "ruff==0.9.10"]
 [project.scripts]
 gestia = "gestia.app:main"
 [tool.setuptools.packages.find]

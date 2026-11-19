@@ -1,0 +1,13 @@
+# Configuración de gitleaks (P3-57): reglas por defecto más las excepciones del proyecto.
+title = "GestIA"
+
+[extend]
+useDefault = true
+
+# Falsos positivos: agregar aquí la ruta o el texto exacto, SIEMPRE con un comentario que
+# explique por qué no es un secreto real. Si aparece un secreto real: primero revocarlo
+# (cambiar la clave en el servicio) y después limpiarlo del historial.
+#
+# [[allowlists]]
+# description = "Motivo del falso positivo"
+# paths = ['''tests/datos/ejemplo\.json''']

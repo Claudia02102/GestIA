@@ -1,0 +1,7 @@
+# P3-57: antes de cada commit, gitleaks revisa los cambios y lo bloquea si encuentra un secreto.
+# Instalación: pip install -e ".[dev]" y luego «pre-commit install» (una vez por clon).
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks

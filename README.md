@@ -312,6 +312,7 @@ Windows con Python 3.11 y 3.12 (P3-55):
 | Pruebas | `pytest -m "not camara and not modelo"` | Cualquier prueba fallida |
 | Código inseguro (SAST, P3-59) | Reglas `S` de ruff (equivalentes a Bandit) | Cualquier hallazgo; las excepciones van por línea con `# noqa: Sxxx` y su motivo |
 | Dependencias (P3-56) | `pip-audit` (solo Python 3.12) | Cualquier vulnerabilidad conocida no documentada |
+| Secretos (P3-57) | `gitleaks` sobre todo el historial (trabajo aparte en Ubuntu) | Cualquier clave, token o contraseña |
 
 Las pruebas que necesiten la cámara o el modelo descargado se marcan con
 `@pytest.mark.camara` o `@pytest.mark.modelo` y el CI las excluye.
@@ -321,6 +322,19 @@ el CI. Si una vulnerabilidad no tiene corrección compatible, se documenta en
 [.github/pip-audit-excepciones.txt](.github/pip-audit-excepciones.txt) con su ID, el motivo y
 la fecha de revisión. **Dependabot** ([.github/dependabot.yml](.github/dependabot.yml)) abre
 cada lunes PRs con las actualizaciones de librerías y de acciones de GitHub.
+
+**Secretos en local (P3-57).** Para que gitleaks revise cada commit antes de crearlo, instale
+el hook una vez por clon (la primera ejecución descarga gitleaks y tarda un poco):
+
+```powershell
+pip install -e ".[dev]"
+pre-commit install
+```
+
+Si bloquea un commit, quite el secreto del archivo (por ejemplo, páselo a `config.json`, que
+Git ignora). Los falsos positivos se documentan en [.gitleaks.toml](.gitleaks.toml) con su
+motivo. Si un secreto real llegó a subirse: primero revóquelo en el servicio y después
+límpielo del historial.
 
 ## Problemas frecuentes
 
