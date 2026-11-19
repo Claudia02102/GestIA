@@ -7,7 +7,12 @@ useDefault = true
 # Falsos positivos: agregar aquí la ruta o el texto exacto, SIEMPRE con un comentario que
 # explique por qué no es un secreto real. Si aparece un secreto real: primero revocarlo
 # (cambiar la clave en el servicio) y después limpiarlo del historial.
-#
-# [[allowlists]]
-# description = "Motivo del falso positivo"
-# paths = ['''tests/datos/ejemplo\.json''']
+
+# Falso positivo (revisado el 19 nov 2026): «key: face-landmarker-float16-v1» es el NOMBRE
+# de la caché de GitHub Actions donde se guarda el modelo de MediaPipe (rama ci-pruebas,
+# commit 5ce2530), no una clave. La regla generic-api-key lo confunde por la palabra «key».
+[[allowlists]]
+description = "Nombre de la caché del modelo de MediaPipe en GitHub Actions"
+condition = "AND"
+paths = ['''^\.github/actions/preparar/action\.yml$''']
+regexes = ['''face-landmarker-float16-v\d+''']
