@@ -104,8 +104,14 @@ def test_cambiar_el_intervalo_se_aplica_sin_reiniciar() -> None:
 
 @pytest.mark.parametrize(
     "raw",
-    [{"break_minutes": 0}, {"break_minutes": 500}, {"break_minutes": "30"},
-     {"sound": "sí"}, {"desconocido": 1}, "x"],
+    [
+        {"break_minutes": 0},
+        {"break_minutes": 500},
+        {"break_minutes": "30"},
+        {"sound": "sí"},
+        {"desconocido": 1},
+        "x",
+    ],
 )
 def test_ajustes_de_avisos_invalidos_se_rechazan(raw) -> None:
     with pytest.raises((ValueError, TypeError)):

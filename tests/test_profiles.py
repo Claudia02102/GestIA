@@ -86,8 +86,19 @@ def test_profile_file_contains_no_images_or_landmarks(tmp_path) -> None:
     store.save(profile)
     raw = json.loads((tmp_path / f"{profile.id}.json").read_text(encoding="utf-8"))
     assert set(raw) == {
-        "schema_version", "id", "name", "created_at", "updated_at", "gestures", "actions",
-        "app_actions", "calibration", "pointer", "keyboard", "feedback", "appearance",
+        "schema_version",
+        "id",
+        "name",
+        "created_at",
+        "updated_at",
+        "gestures",
+        "actions",
+        "app_actions",
+        "calibration",
+        "pointer",
+        "keyboard",
+        "feedback",
+        "appearance",
         "onboarding",
     }
     assert "landmarks" not in json.dumps(raw)

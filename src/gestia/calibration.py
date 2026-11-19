@@ -269,7 +269,8 @@ class CalibrationSession:
             self.skipped.append(step.gesture)
             self._advance()
             return SessionUpdate(
-                self.step, 0.0,
+                self.step,
+                0.0,
                 f"Se omitió «{GESTURES[step.gesture].name}»; quedará desactivado.",
                 step_failed=True,
             )
@@ -323,13 +324,13 @@ class CalibrationSession:
                     reference = self.head_values[opposite] - self.neutral[axis]
                     if (measured - self.neutral[axis]) * reference > 0:
                         return self._fail(
-                            step, "El movimiento fue hacia el mismo lado que el anterior.",
+                            step,
+                            "El movimiento fue hacia el mismo lado que el anterior.",
                             timestamp_ms,
                         )
                 self.head_values[step.kind] = measured
                 self._advance()
-                return SessionUpdate(self.step, 0.0, "Movimiento registrado.",
-                                     step_completed=True)
+                return SessionUpdate(self.step, 0.0, "Movimiento registrado.", step_completed=True)
             if timeout:
                 return self._fail(step, "No se detectó un movimiento suficiente.", timestamp_ms)
             return SessionUpdate(step, self._hold.progress(timestamp_ms))
@@ -374,16 +375,23 @@ class CalibrationSession:
         if len(self.corners) == len(CORNERS):
             self._advance()
             return SessionUpdate(
-                self.step, 1.0, "Las cuatro esquinas son alcanzables.", step_completed=True,
-                pointer=(x, y), corners_reached=frozenset(CORNERS),
+                self.step,
+                1.0,
+                "Las cuatro esquinas son alcanzables.",
+                step_completed=True,
+                pointer=(x, y),
+                corners_reached=frozenset(CORNERS),
             )
         if elapsed >= self.config.verify_timeout_ms:
             return self._fail(
-                self.step, "No se alcanzaron las cuatro esquinas: repita el rango de movimiento.",
+                self.step,
+                "No se alcanzaron las cuatro esquinas: repita el rango de movimiento.",
                 timestamp_ms,
             )
         return SessionUpdate(
-            self.step, len(self.corners) / len(CORNERS), pointer=(x, y),
+            self.step,
+            len(self.corners) / len(CORNERS),
+            pointer=(x, y),
             corners_reached=frozenset(self.corners),
         )
 

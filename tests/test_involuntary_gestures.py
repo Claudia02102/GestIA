@@ -12,8 +12,9 @@ from gestia.gestures import (
     default_gesture_settings,
 )
 
-NEUTRAL = dict(yaw=0.5, pitch=0.55, eye_left=0.3, eye_right=0.3, mouth_open=0.05,
-               brow_raise=0.2, smile=0.4)
+NEUTRAL = dict(
+    yaw=0.5, pitch=0.55, eye_left=0.3, eye_right=0.3, mouth_open=0.05, brow_raise=0.2, smile=0.4
+)
 RANGES = {
     GestureId.BLINK: SignalRange(0.3, 0.05),
     GestureId.WINK_LEFT: SignalRange(0.0, -0.25),
@@ -57,8 +58,18 @@ def natural_blink(camera: Camera, closed_ms: int, leading: str) -> None:
 def talk(camera: Camera, seconds: int, smiling: bool = False) -> None:
     """Sílabas: la boca se abre de forma corta y desigual, a veces con una vocal larga."""
     smile = {"smile": 0.47} if smiling else {}
-    pattern = [(165, 0.25), (132, 0.12), (198, 0.33), (99, 0.1), (330, 0.3), (132, 0.08),
-               (165, 0.22), (231, 0.06), (495, 0.31), (165, 0.1)]
+    pattern = [
+        (165, 0.25),
+        (132, 0.12),
+        (198, 0.33),
+        (99, 0.1),
+        (330, 0.3),
+        (132, 0.08),
+        (165, 0.22),
+        (231, 0.06),
+        (495, 0.31),
+        (165, 0.1),
+    ]
     end = camera.ts + seconds * 1000
     while camera.ts < end:
         for ms, mouth in pattern:
@@ -74,8 +85,11 @@ def test_natural_blinking_for_a_minute_makes_no_click(sensitivity) -> None:
     # parpadeo natural (< 500 ms) no llega a los 800 ms de la pausa.
     camera = Camera(sensitivity)
     for second in range(0, 60, 3):
-        natural_blink(camera, closed_ms=99 + (second % 6) * 66,
-                      leading="eye_left" if second % 2 else "eye_right")
+        natural_blink(
+            camera,
+            closed_ms=99 + (second % 6) * 66,
+            leading="eye_left" if second % 2 else "eye_right",
+        )
         camera.show(2600)
     assert camera.actions == []
 
@@ -151,10 +165,7 @@ def test_hold_time_comes_from_the_profile() -> None:
     engine.configure(settings, RANGES, DEFAULT_ACTIONS)
     wink = FaceFeatures(**{**NEUTRAL, "eye_left": 0.05})
     fired = [
-        event.action
-        for ts in range(0, 600, FRAME_MS)
-        for event in engine.update(wink, ts).events
+        event.action for ts in range(0, 600, FRAME_MS) for event in engine.update(wink, ts).events
     ]
     assert fired == []
     assert [event.action for event in engine.update(wink, 820).events] == [Action.LEFT_CLICK]
-

@@ -251,9 +251,17 @@ class MainWindow(QMainWindow):
         self.practice_button.clicked.connect(lambda: self.open_tutorial(practice=True))
         self.profile_status = QLabel()
         for widget in (
-            QLabel("Perfil:"), self.profile_selector, new_profile, self.delete_button,
-            export_profile, import_profile, restore, self.calibrate_button,
-            self.recenter_button, self.tutorial_button, self.practice_button,
+            QLabel("Perfil:"),
+            self.profile_selector,
+            new_profile,
+            self.delete_button,
+            export_profile,
+            import_profile,
+            restore,
+            self.calibrate_button,
+            self.recenter_button,
+            self.tutorial_button,
+            self.practice_button,
             self.profile_status,
         ):
             profile_bar.addWidget(widget)
@@ -280,8 +288,12 @@ class MainWindow(QMainWindow):
         hotkey_label = QLabel(hotkey if self.hotkeys.active else "")
         hotkey_label.setObjectName("muted")
         for widget in (
-            self.control_check, self.pause_button, self.keyboard_button,
-            self.quick_menu_button, self.mode_label, hotkey_label,
+            self.control_check,
+            self.pause_button,
+            self.keyboard_button,
+            self.quick_menu_button,
+            self.mode_label,
+            hotkey_label,
         ):
             control_bar.addWidget(widget)
         control_bar.addStretch()
@@ -372,7 +384,8 @@ class MainWindow(QMainWindow):
         self.autostart_switch.setEnabled(self.autostart.available)
         self.autostart_switch.setToolTip(
             "Abre GestIA y la cámara al iniciar sesión en Windows, sin ayuda"
-            if self.autostart.available else "Solo disponible en Windows"
+            if self.autostart.available
+            else "Solo disponible en Windows"
         )
         self.autostart_switch.toggled.connect(self._autostart_toggled)
         autostart_label = QLabel("Iniciar con Windows")
@@ -399,7 +412,8 @@ class MainWindow(QMainWindow):
             self.autostart_switch.blockSignals(False)
             return
         self.panel.log_message(
-            "GestIA se abrirá al iniciar Windows." if enabled
+            "GestIA se abrirá al iniciar Windows."
+            if enabled
             else "GestIA ya no se abrirá al iniciar Windows."
         )
 
@@ -411,9 +425,7 @@ class MainWindow(QMainWindow):
         self.dark_switch.blockSignals(True)
         self.dark_switch.setChecked(dark)
         self.dark_switch.blockSignals(False)
-        self.brand_label.setText(
-            f'Gest<span style="color: {palette.accent_text};">IA</span>'
-        )
+        self.brand_label.setText(f'Gest<span style="color: {palette.accent_text};">IA</span>')
         for window in (self.keyboard, self.quick_menu):
             if window is not None:
                 window.setStyleSheet(theme.keyboard_stylesheet(palette))
@@ -422,9 +434,7 @@ class MainWindow(QMainWindow):
         self._update_profile_status()
         if self.controller is not None and self.control_mode is not None:
             text, token = MODE_TEXT[self.control_mode]
-            self.mode_label.setStyleSheet(
-                f"font-weight: 600; color: {getattr(palette, token)};"
-            )
+            self.mode_label.setStyleSheet(f"font-weight: 600; color: {getattr(palette, token)};")
         self.pointer.update()
 
     @Slot(bool)
@@ -517,8 +527,10 @@ class MainWindow(QMainWindow):
         geometry, ratio = screen.geometry(), screen.devicePixelRatio()
         # Qt trabaja en píxeles lógicos; SendInput, en físicos (escalado de Windows).
         area = ScreenArea(
-            round(geometry.x() * ratio), round(geometry.y() * ratio),
-            round(geometry.width() * ratio), round(geometry.height() * ratio),
+            round(geometry.x() * ratio),
+            round(geometry.y() * ratio),
+            round(geometry.width() * ratio),
+            round(geometry.height() * ratio),
         )
         try:
             backend = PynputBackend()
@@ -559,9 +571,7 @@ class MainWindow(QMainWindow):
     def _tick_breaks(self) -> None:
         paused = self.controller is not None and self.controller.paused
         active = (
-            self.thread is not None
-            and self.tracking_state is TrackingState.TRACKING
-            and not paused
+            self.thread is not None and self.tracking_state is TrackingState.TRACKING and not paused
         )
         if self.break_timer.tick(time.monotonic(), active):
             self.show_break_reminder()
@@ -630,9 +640,7 @@ class MainWindow(QMainWindow):
             self.store.set_active(profile_id)
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "Perfil", f"No se pudo cargar el perfil: {exc}")
-            self.profile_selector.setCurrentIndex(
-                self.profile_selector.findData(self.profile.id)
-            )
+            self.profile_selector.setCurrentIndex(self.profile_selector.findData(self.profile.id))
             return
         self.wizard_offered = False
         self._activate_profile(profile)
@@ -702,7 +710,8 @@ class MainWindow(QMainWindow):
             self.store.set_active(profile.id)
         except (OSError, ValueError) as exc:
             QMessageBox.warning(
-                self, "Importar perfil",
+                self,
+                "Importar perfil",
                 f"No se importó el archivo y la configuración actual no cambió.\n\n{exc}",
             )
             return
@@ -761,7 +770,8 @@ class MainWindow(QMainWindow):
         """
         controller = self.controller
         locked = controller is not None and controller.mode in (
-            ControlMode.DRAGGING, ControlMode.SCROLLING,
+            ControlMode.DRAGGING,
+            ControlMode.SCROLLING,
         )
         if not locked:
             self.action_app = foreground_app()
@@ -976,7 +986,8 @@ class MainWindow(QMainWindow):
             # P3-22: mientras la persona habla, abrir la boca o sonreír no ejecuta acciones.
             self.speaking = packet.gestures.speaking
             self.panel.log_message(
-                "Hablando: los gestos de la boca esperan." if self.speaking
+                "Hablando: los gestos de la boca esperan."
+                if self.speaking
                 else "Gestos de la boca disponibles otra vez."
             )
         os_events = []
@@ -1043,9 +1054,7 @@ class MainWindow(QMainWindow):
                 ys.append(y)
                 cv2.circle(frame, (x, y), 1, (74, 222, 128), -1)
             if xs and ys:
-                cv2.rectangle(
-                    frame, (min(xs), min(ys)), (max(xs), max(ys)), (34, 197, 94), 2
-                )
+                cv2.rectangle(frame, (min(xs), min(ys)), (max(xs), max(ys)), (34, 197, 94), 2)
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         image = QImage(
             rgb.data, width, height, int(rgb.strides[0]), QImage.Format.Format_RGB888

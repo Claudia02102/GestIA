@@ -112,8 +112,12 @@ def packet(window, events=(), state=TrackingState.TRACKING):
     window._set_state(state)
     window._show_packet(
         DisplayPacket(
-            FRAME, FaceResult(timestamp, landmarks, 5.0), state,
-            PerformanceSnapshot(30, 30, 5, 0, 0), features, GestureFrame({}, tuple(events)),
+            FRAME,
+            FaceResult(timestamp, landmarks, 5.0),
+            state,
+            PerformanceSnapshot(30, 30, 5, 0, 0),
+            features,
+            GestureFrame({}, tuple(events)),
         )
     )
 

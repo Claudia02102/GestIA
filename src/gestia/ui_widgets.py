@@ -215,8 +215,10 @@ class LogoMark(QWidget):
         painter.setPen(pen)
         inset, arm = side * 0.24, side * 0.14
         for x, y, dx, dy in (
-            (inset, inset, 1, 1), (side - inset, inset, -1, 1),
-            (inset, side - inset, 1, -1), (side - inset, side - inset, -1, -1),
+            (inset, inset, 1, 1),
+            (side - inset, inset, -1, 1),
+            (inset, side - inset, 1, -1),
+            (side - inset, side - inset, -1, -1),
         ):  # esquinas del encuadre de la cámara
             painter.drawLine(QPointF(x, y), QPointF(x + dx * arm, y))
             painter.drawLine(QPointF(x, y), QPointF(x, y + dy * arm))
@@ -225,8 +227,9 @@ class LogoMark(QWidget):
         painter.drawEllipse(QPointF(side * 0.41, side * 0.44), eye, eye)
         painter.drawEllipse(QPointF(side * 0.59, side * 0.44), eye, eye)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawArc(QRectF(side * 0.38, side * 0.46, side * 0.24, side * 0.16), 200 * 16,
-                        140 * 16)
+        painter.drawArc(
+            QRectF(side * 0.38, side * 0.46, side * 0.24, side * 0.16), 200 * 16, 140 * 16
+        )
         painter.end()
 
 

@@ -10,3 +10,4 @@ data/*.jsonl
 config.json
 *.egg-info/
 data/profiles/
+reporte-pruebas.xml

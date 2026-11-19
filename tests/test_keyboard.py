@@ -106,8 +106,13 @@ def test_shift_is_one_shot_and_caps_lock_persists() -> None:
 def test_shortcuts_send_ctrl_combinations() -> None:
     typing, backend, _ = session()
     write(typing, "ho")
-    for shortcut in (Shortcut.SELECT_ALL, Shortcut.COPY, Shortcut.PASTE, Shortcut.CUT,
-                     Shortcut.UNDO):
+    for shortcut in (
+        Shortcut.SELECT_ALL,
+        Shortcut.COPY,
+        Shortcut.PASTE,
+        Shortcut.CUT,
+        Shortcut.UNDO,
+    ):
         typing.press_shortcut(shortcut)
     assert [call[1] for call in backend.calls if call[0] == "ctrl"] == list("acvxz")
     assert typing.word == ""

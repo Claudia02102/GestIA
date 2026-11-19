@@ -156,9 +156,7 @@ class Profile:
                     bool(item.get("enabled", True)), sensitivity, hold_ms
                 )
             actions = dict(DEFAULT_ACTIONS)
-            actions.update(
-                {GestureId(k): Action(v) for k, v in raw.get("actions", {}).items()}
-            )
+            actions.update({GestureId(k): Action(v) for k, v in raw.get("actions", {}).items()})
             # Los perfiles anteriores a P3-16 no tienen esta sección.
             app_actions = {
                 normalize_app_name(app): {GestureId(k): Action(v) for k, v in mapping.items()}
@@ -352,4 +350,3 @@ class ProfileStore:
         profile = profiles[0] if profiles else self.create("Perfil 1")
         self.set_active(profile.id)
         return profile
-

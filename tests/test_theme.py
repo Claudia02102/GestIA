@@ -17,7 +17,7 @@ PALETTES = [LIGHT, DARK]
 
 
 def luminance(color: str) -> float:
-    channels = [int(color.lstrip("#")[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+    channels = [int(color.lstrip("#")[i : i + 2], 16) / 255 for i in (0, 2, 4)]
     linear = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
     return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
 
@@ -29,20 +29,32 @@ def contrast(foreground: str, background: str) -> float:
 
 def test_la_paleta_usa_los_colores_de_marca() -> None:
     assert (LIGHT.accent, LIGHT.background, LIGHT.surface, LIGHT.text) == (
-        "#ff6a2b", "#f3efe6", "#ffffff", "#13171c"
+        "#ff6a2b",
+        "#f3efe6",
+        "#ffffff",
+        "#13171c",
     )
     assert (DARK.accent, DARK.background, DARK.text) == ("#ff6a2b", "#13171c", "#f3efe6")
 
 
 # Pares de texto que aparecen en la interfaz: WCAG 2.1 AA exige 4,5:1.
 TEXT_PAIRS = [
-    ("text", "background"), ("text", "surface"), ("text", "surface_alt"),
-    ("text_muted", "background"), ("text_muted", "surface"),
-    ("accent_text", "background"), ("accent_text", "surface"),
-    ("accent_text", "surface_alt"), ("accent_text", "accent_soft"),
-    ("on_accent", "accent"), ("text", "accent_soft"),
-    ("success", "surface"), ("warning", "surface"), ("danger", "surface"),
-    ("info", "surface"), ("special", "surface"),
+    ("text", "background"),
+    ("text", "surface"),
+    ("text", "surface_alt"),
+    ("text_muted", "background"),
+    ("text_muted", "surface"),
+    ("accent_text", "background"),
+    ("accent_text", "surface"),
+    ("accent_text", "surface_alt"),
+    ("accent_text", "accent_soft"),
+    ("on_accent", "accent"),
+    ("text", "accent_soft"),
+    ("success", "surface"),
+    ("warning", "surface"),
+    ("danger", "surface"),
+    ("info", "surface"),
+    ("special", "surface"),
 ]
 
 
@@ -70,8 +82,7 @@ def test_la_hoja_de_estilo_solo_usa_colores_de_la_paleta(palette) -> None:
 
 
 def vars_of(palette) -> dict:
-    return {name: getattr(palette, name) for name in palette.__dataclass_fields__
-            if name != "name"}
+    return {name: getattr(palette, name) for name in palette.__dataclass_fields__ if name != "name"}
 
 
 def test_el_icono_de_la_casilla_existe() -> None:

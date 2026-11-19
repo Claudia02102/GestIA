@@ -59,7 +59,10 @@ class PointerSettings:
         if not isinstance(self.enabled, bool) or not isinstance(self.dwell_enabled, bool):
             raise ValueError("Los ajustes de activación deben ser verdadero o falso")
         whole = (
-            self.smoothing, self.dead_zone_px, self.dwell_ms, self.dwell_radius_px,
+            self.smoothing,
+            self.dead_zone_px,
+            self.dwell_ms,
+            self.dwell_radius_px,
             self.scroll_speed,
         )
         if any(not isinstance(value, int) or isinstance(value, bool) for value in whole):
@@ -225,8 +228,9 @@ class PointerController:
                 self._scroll(pointer)
                 return ControlStatus(self.mode, self.position, executed=tuple(executed))
 
-        target = self.screen.to_pixels(*self._smooth(apply_speed(pointer, self.settings.speed),
-                                                     timestamp_ms))
+        target = self.screen.to_pixels(
+            *self._smooth(apply_speed(pointer, self.settings.speed), timestamp_ms)
+        )
         moved = self.position is None or (
             not hold_position and math.dist(target, self.position) >= self.settings.dead_zone_px
         )

@@ -17,8 +17,9 @@ from gestia.gestures import (
     resume_hint,
 )
 
-NEUTRAL = dict(yaw=0.5, pitch=0.55, eye_left=0.3, eye_right=0.3, mouth_open=0.05,
-               brow_raise=0.2, smile=0.4)
+NEUTRAL = dict(
+    yaw=0.5, pitch=0.55, eye_left=0.3, eye_right=0.3, mouth_open=0.05, brow_raise=0.2, smile=0.4
+)
 RANGES = {
     GestureId.BLINK: SignalRange(0.3, 0.05),
     GestureId.WINK_LEFT: SignalRange(0.0, -0.25),

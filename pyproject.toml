@@ -16,7 +16,7 @@ dependencies = [
   "pynput==1.8.1",
 ]
 [project.optional-dependencies]
-dev = ["pytest==8.3.5", "ruff==0.9.10"]
+dev = ["pytest==9.0.3", "ruff==0.9.10"]
 [project.scripts]
 gestia = "gestia.app:main"
 [tool.setuptools.packages.find]
@@ -27,6 +27,11 @@ gestia = ["assets/*.svg"]
 addopts = "-q"
 testpaths = ["tests"]
 pythonpath = ["src"]
+# Pruebas que necesitan hardware o archivos externos: CI las excluye (P3-55).
+markers = [
+  "camara: usa la cámara web real",
+  "modelo: usa el modelo de MediaPipe descargado (models/face_landmarker.task)",
+]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
