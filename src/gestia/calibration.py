@@ -129,7 +129,8 @@ class _Hold:
         return None
 
     def _stable(self) -> bool:
-        assert self.tolerance is not None
+        if self.tolerance is None:
+            raise RuntimeError("La calibración aún no tiene tolerancia")
         for dim in range(len(self.samples[0][1])):
             column = [item[1][dim] for item in self.samples]
             if max(column) - min(column) > self.tolerance:
@@ -335,7 +336,8 @@ class CalibrationSession:
                 return self._fail(step, "No se detectó un movimiento suficiente.", timestamp_ms)
             return SessionUpdate(step, self._hold.progress(timestamp_ms))
 
-        assert step.gesture is not None
+        if step.gesture is None:
+            raise RuntimeError("El paso de calibración no tiene gesto asignado")
         spec = GESTURES[step.gesture]
         neutral_value = spec.signal(_neutral_features(self.neutral))
         value = spec.signal(features)
@@ -358,7 +360,8 @@ class CalibrationSession:
     def _feed_corners(
         self, features: FaceFeatures, timestamp_ms: int, elapsed: int
     ) -> SessionUpdate:
-        assert self.head is not None
+        if self.head is None:
+            raise RuntimeError("Falta la calibración de la cabeza")
         x, y = self.head.to_pointer(features, self.config.reach)
         for name, reached in zip(
             CORNERS,
@@ -430,5 +433,6 @@ class Recenterer:
         return RecenterStatus.COLLECTING
 
     def apply(self, calibration: Calibration) -> Calibration:
-        assert self.center is not None
+        if self.center is None:
+            raise RuntimeError("Aún no se ha medido el centro")
         return replace(calibration, head=calibration.head.recentered(*self.center))

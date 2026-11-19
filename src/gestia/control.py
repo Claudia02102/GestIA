@@ -237,7 +237,8 @@ class PointerController:
         if moved:
             self.position = target
             self.backend.move(*target)
-        assert self.position is not None
+        if self.position is None:
+            raise RuntimeError("El cursor no tiene posición")
 
         if self.mode is ControlMode.DRAGGING:
             if Action.DRAG in actions or Action.LEFT_CLICK in actions:

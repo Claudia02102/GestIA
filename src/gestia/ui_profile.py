@@ -165,12 +165,14 @@ class GesturePanel(QTabWidget):
         return self.app_selector.currentData()
 
     def _edited_actions(self) -> dict[GestureId, Action]:
-        assert self.profile is not None
+        if self.profile is None:
+            raise RuntimeError("No hay un perfil cargado")
         app = self.selected_app
         return self.profile.actions if app is None else self.profile.app_actions[app]
 
     def _load_apps(self, selected: str | None = None) -> None:
-        assert self.profile is not None
+        if self.profile is None:
+            raise RuntimeError("No hay un perfil cargado")
         loading, self._loading = self._loading, True
         try:
             self.app_selector.clear()
@@ -241,7 +243,8 @@ class GesturePanel(QTabWidget):
         self.active_app_label.setText(text)
 
     def _keeps_left_click(self, actions: dict[GestureId, Action]) -> bool:
-        assert self.profile is not None
+        if self.profile is None:
+            raise RuntimeError("No hay un perfil cargado")
         return self.profile.pointer.dwell_enabled or has_left_click(self.profile.gestures, actions)
 
     def _action_chosen(self, gesture: GestureId) -> None:
@@ -399,7 +402,8 @@ class GesturePanel(QTabWidget):
         self.changed.emit()
 
     def _load_feedback(self) -> None:
-        assert self.profile is not None
+        if self.profile is None:
+            raise RuntimeError("No hay un perfil cargado")
         feedback = self.profile.feedback
         self.sound_check.setChecked(feedback.sound)
         self.indicator_check.setChecked(feedback.indicator)
@@ -416,7 +420,8 @@ class GesturePanel(QTabWidget):
         self.changed.emit()
 
     def _load_keyboard(self) -> None:
-        assert self.profile is not None
+        if self.profile is None:
+            raise RuntimeError("No hay un perfil cargado")
         keyboard = self.profile.keyboard
         self.layout_selector.setCurrentIndex(self.layout_selector.findData(str(keyboard.layout)))
         self.key_size.setValue(keyboard.key_size)
@@ -570,7 +575,8 @@ class GesturePanel(QTabWidget):
             self._loading = loading
 
     def _update_label(self, gesture: GestureId) -> None:
-        assert self.profile is not None
+        if self.profile is None:
+            raise RuntimeError("No hay un perfil cargado")
         settings = self.profile.gestures[gesture]
         self.slider_labels[gesture].setText(
             f"{settings.sensitivity} (umbral {settings.threshold:.0%})"
