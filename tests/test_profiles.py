@@ -88,6 +88,7 @@ def test_profile_file_contains_no_images_or_landmarks(tmp_path) -> None:
     assert set(raw) == {
         "schema_version", "id", "name", "created_at", "updated_at", "gestures", "actions",
         "app_actions", "calibration", "pointer", "keyboard", "feedback", "appearance",
+        "onboarding",
     }
     assert "landmarks" not in json.dumps(raw)
 

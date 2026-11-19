@@ -34,7 +34,7 @@ from gestia.keyboard import KeyboardSettings
 from gestia.theme import AppearanceSettings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 INDEX_FILE = "index.json"
 EXPORT_FORMAT = "gestia-profile"
 EXPORT_VERSION = 1
@@ -60,6 +60,8 @@ class Profile:
     feedback: FeedbackSettings = field(default_factory=FeedbackSettings)
     # Modo claro u oscuro: preferencia personal, «Restaurar valores» no la cambia.
     appearance: AppearanceSettings = field(default_factory=AppearanceSettings)
+    # P3-26: el tutorial se ofrece solo la primera vez tras calibrar.
+    tutorial_done: bool = False
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
 
@@ -137,6 +139,7 @@ class Profile:
             "keyboard": self.keyboard.to_dict(),
             "feedback": self.feedback.to_dict(),
             "appearance": self.appearance.to_dict(),
+            "onboarding": {"tutorial_done": self.tutorial_done},
         }
 
     @classmethod
@@ -170,6 +173,11 @@ class Profile:
             # Los perfiles anteriores al Sprint 6 no tienen esta sección.
             feedback = FeedbackSettings.from_dict(raw.get("feedback", {}))
             appearance = AppearanceSettings.from_dict(raw.get("appearance", {}))
+            # Los perfiles anteriores al Sprint 7 no tienen esta sección.
+            onboarding = raw.get("onboarding", {})
+            tutorial_done = onboarding.get("tutorial_done", False)
+            if not isinstance(tutorial_done, bool):
+                raise ValueError("tutorial_done debe ser verdadero o falso")
             return cls(
                 id=str(raw["id"]),
                 name=str(raw["name"]),
@@ -181,6 +189,7 @@ class Profile:
                 keyboard=keyboard,
                 feedback=feedback,
                 appearance=appearance,
+                tutorial_done=tutorial_done,
                 created_at=str(raw.get("created_at", _now())),
                 updated_at=str(raw.get("updated_at", _now())),
             )
