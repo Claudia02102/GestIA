@@ -165,12 +165,14 @@ class GesturePanel(QTabWidget):
         return self.app_selector.currentData()
 
     def _edited_actions(self) -> dict[GestureId, Action]:
-        assert self.profile is not None
+        if self.profile is None:
+            raise RuntimeError("No hay un perfil cargado")
         app = self.selected_app
         return self.profile.actions if app is None else self.profile.app_actions[app]
 
     def _load_apps(self, selected: str | None = None) -> None:
-        assert self.profile is not None
+        if self.profile is None:
+            raise RuntimeError("No hay un perfil cargado")
         loading, self._loading = self._loading, True
         try:
             self.app_selector.clear()
@@ -198,9 +200,12 @@ class GesturePanel(QTabWidget):
 
     def _ask_app(self) -> None:
         text, ok = QInputDialog.getItem(
-            self, "Añadir aplicación",
+            self,
+            "Añadir aplicación",
             "Elija una aplicación abierta o escriba su ejecutable (p. ej., winword.exe):",
-            open_apps(), 0, True,
+            open_apps(),
+            0,
+            True,
         )
         if not ok or not text.strip():
             return
@@ -214,7 +219,8 @@ class GesturePanel(QTabWidget):
         if self.profile is None or app is None:
             return
         answer = QMessageBox.question(
-            self, "Mapeo por aplicación",
+            self,
+            "Mapeo por aplicación",
             f"¿Quitar el mapeo de {app}? Esa aplicación pasará a usar el general.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
@@ -237,10 +243,9 @@ class GesturePanel(QTabWidget):
         self.active_app_label.setText(text)
 
     def _keeps_left_click(self, actions: dict[GestureId, Action]) -> bool:
-        assert self.profile is not None
-        return self.profile.pointer.dwell_enabled or has_left_click(
-            self.profile.gestures, actions
-        )
+        if self.profile is None:
+            raise RuntimeError("No hay un perfil cargado")
+        return self.profile.pointer.dwell_enabled or has_left_click(self.profile.gestures, actions)
 
     def _action_chosen(self, gesture: GestureId) -> None:
         if self._loading or self.profile is None:
@@ -397,7 +402,8 @@ class GesturePanel(QTabWidget):
         self.changed.emit()
 
     def _load_feedback(self) -> None:
-        assert self.profile is not None
+        if self.profile is None:
+            raise RuntimeError("No hay un perfil cargado")
         feedback = self.profile.feedback
         self.sound_check.setChecked(feedback.sound)
         self.indicator_check.setChecked(feedback.indicator)
@@ -414,7 +420,8 @@ class GesturePanel(QTabWidget):
         self.changed.emit()
 
     def _load_keyboard(self) -> None:
-        assert self.profile is not None
+        if self.profile is None:
+            raise RuntimeError("No hay un perfil cargado")
         keyboard = self.profile.keyboard
         self.layout_selector.setCurrentIndex(self.layout_selector.findData(str(keyboard.layout)))
         self.key_size.setValue(keyboard.key_size)
@@ -568,7 +575,8 @@ class GesturePanel(QTabWidget):
             self._loading = loading
 
     def _update_label(self, gesture: GestureId) -> None:
-        assert self.profile is not None
+        if self.profile is None:
+            raise RuntimeError("No hay un perfil cargado")
         settings = self.profile.gestures[gesture]
         self.slider_labels[gesture].setText(
             f"{settings.sensitivity} (umbral {settings.threshold:.0%})"
@@ -619,8 +627,10 @@ class GesturePanel(QTabWidget):
             bar.setValue(round(min(frame.activations.get(gesture, 0.0), 1.0) * 100))
 
     def log_event(self, event: GestureEvent, note: str = "") -> None:
-        text = f"{time.strftime('%H:%M:%S')}  {GESTURES[event.gesture].name} → " \
-               f"{ACTION_TEXT[event.action]}"
+        text = (
+            f"{time.strftime('%H:%M:%S')}  {GESTURES[event.gesture].name} → "
+            f"{ACTION_TEXT[event.action]}"
+        )
         self.events.insertItem(0, f"{text}  {note}".rstrip())
         while self.events.count() > MAX_EVENTS:
             self.events.takeItem(self.events.count() - 1)

@@ -103,8 +103,14 @@ class AppConfig:
             raise ValueError("Los tiempos configurados no son válidos")
         c = self.calibration
         durations = (
-            c.settle_ms, c.neutral_hold_ms, c.pose_hold_ms, c.gesture_hold_ms,
-            c.step_timeout_ms, c.verify_timeout_ms, c.recenter_hold_ms, c.recenter_timeout_ms,
+            c.settle_ms,
+            c.neutral_hold_ms,
+            c.pose_hold_ms,
+            c.gesture_hold_ms,
+            c.step_timeout_ms,
+            c.verify_timeout_ms,
+            c.recenter_hold_ms,
+            c.recenter_timeout_ms,
         )
         if min(durations) < 0 or c.recenter_hold_ms >= c.recenter_timeout_ms:
             raise ValueError("Los tiempos de calibración no son válidos")

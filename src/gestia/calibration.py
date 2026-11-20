@@ -129,7 +129,8 @@ class _Hold:
         return None
 
     def _stable(self) -> bool:
-        assert self.tolerance is not None
+        if self.tolerance is None:
+            raise RuntimeError("La calibración aún no tiene tolerancia")
         for dim in range(len(self.samples[0][1])):
             column = [item[1][dim] for item in self.samples]
             if max(column) - min(column) > self.tolerance:
@@ -269,7 +270,8 @@ class CalibrationSession:
             self.skipped.append(step.gesture)
             self._advance()
             return SessionUpdate(
-                self.step, 0.0,
+                self.step,
+                0.0,
                 f"Se omitió «{GESTURES[step.gesture].name}»; quedará desactivado.",
                 step_failed=True,
             )
@@ -323,18 +325,19 @@ class CalibrationSession:
                     reference = self.head_values[opposite] - self.neutral[axis]
                     if (measured - self.neutral[axis]) * reference > 0:
                         return self._fail(
-                            step, "El movimiento fue hacia el mismo lado que el anterior.",
+                            step,
+                            "El movimiento fue hacia el mismo lado que el anterior.",
                             timestamp_ms,
                         )
                 self.head_values[step.kind] = measured
                 self._advance()
-                return SessionUpdate(self.step, 0.0, "Movimiento registrado.",
-                                     step_completed=True)
+                return SessionUpdate(self.step, 0.0, "Movimiento registrado.", step_completed=True)
             if timeout:
                 return self._fail(step, "No se detectó un movimiento suficiente.", timestamp_ms)
             return SessionUpdate(step, self._hold.progress(timestamp_ms))
 
-        assert step.gesture is not None
+        if step.gesture is None:
+            raise RuntimeError("El paso de calibración no tiene gesto asignado")
         spec = GESTURES[step.gesture]
         neutral_value = spec.signal(_neutral_features(self.neutral))
         value = spec.signal(features)
@@ -357,7 +360,8 @@ class CalibrationSession:
     def _feed_corners(
         self, features: FaceFeatures, timestamp_ms: int, elapsed: int
     ) -> SessionUpdate:
-        assert self.head is not None
+        if self.head is None:
+            raise RuntimeError("Falta la calibración de la cabeza")
         x, y = self.head.to_pointer(features, self.config.reach)
         for name, reached in zip(
             CORNERS,
@@ -374,16 +378,23 @@ class CalibrationSession:
         if len(self.corners) == len(CORNERS):
             self._advance()
             return SessionUpdate(
-                self.step, 1.0, "Las cuatro esquinas son alcanzables.", step_completed=True,
-                pointer=(x, y), corners_reached=frozenset(CORNERS),
+                self.step,
+                1.0,
+                "Las cuatro esquinas son alcanzables.",
+                step_completed=True,
+                pointer=(x, y),
+                corners_reached=frozenset(CORNERS),
             )
         if elapsed >= self.config.verify_timeout_ms:
             return self._fail(
-                self.step, "No se alcanzaron las cuatro esquinas: repita el rango de movimiento.",
+                self.step,
+                "No se alcanzaron las cuatro esquinas: repita el rango de movimiento.",
                 timestamp_ms,
             )
         return SessionUpdate(
-            self.step, len(self.corners) / len(CORNERS), pointer=(x, y),
+            self.step,
+            len(self.corners) / len(CORNERS),
+            pointer=(x, y),
             corners_reached=frozenset(self.corners),
         )
 
@@ -422,5 +433,6 @@ class Recenterer:
         return RecenterStatus.COLLECTING
 
     def apply(self, calibration: Calibration) -> Calibration:
-        assert self.center is not None
+        if self.center is None:
+            raise RuntimeError("Aún no se ha medido el centro")
         return replace(calibration, head=calibration.head.recentered(*self.center))

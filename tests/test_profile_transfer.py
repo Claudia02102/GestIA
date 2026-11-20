@@ -27,9 +27,7 @@ def customized(store: ProfileStore) -> Profile:
 
 
 def snapshot(store: ProfileStore) -> dict[str, str]:
-    return {
-        path.name: path.read_text(encoding="utf-8") for path in store.directory.glob("*.json")
-    }
+    return {path.name: path.read_text(encoding="utf-8") for path in store.directory.glob("*.json")}
 
 
 def wrap(profile: dict) -> str:

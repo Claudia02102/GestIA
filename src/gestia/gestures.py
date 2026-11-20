@@ -66,33 +66,58 @@ GESTURES: dict[GestureId, GestureSpec] = {
     spec.gesture: spec
     for spec in (
         GestureSpec(
-            GestureId.MOUTH_OPEN, "Abrir la boca", "Abra la boca y manténgala abierta",
-            lambda f: f.mouth_open, group="mouth", shifts_head=True,
+            GestureId.MOUTH_OPEN,
+            "Abrir la boca",
+            "Abra la boca y manténgala abierta",
+            lambda f: f.mouth_open,
+            group="mouth",
+            shifts_head=True,
         ),
         GestureSpec(
-            GestureId.BLINK, "Cerrar ambos ojos", "Cierre ambos ojos hasta oír la señal",
-            lambda f: (f.eye_left + f.eye_right) / 2.0, group="eyes",
+            GestureId.BLINK,
+            "Cerrar ambos ojos",
+            "Cierre ambos ojos hasta oír la señal",
+            lambda f: (f.eye_left + f.eye_right) / 2.0,
+            group="eyes",
         ),
         GestureSpec(
-            GestureId.WINK_LEFT, "Guiño izquierdo", "Cierre solo el ojo izquierdo",
-            lambda f: f.eye_left - f.eye_right, group="eyes",
+            GestureId.WINK_LEFT,
+            "Guiño izquierdo",
+            "Cierre solo el ojo izquierdo",
+            lambda f: f.eye_left - f.eye_right,
+            group="eyes",
         ),
         GestureSpec(
-            GestureId.WINK_RIGHT, "Guiño derecho", "Cierre solo el ojo derecho",
-            lambda f: f.eye_right - f.eye_left, group="eyes",
+            GestureId.WINK_RIGHT,
+            "Guiño derecho",
+            "Cierre solo el ojo derecho",
+            lambda f: f.eye_right - f.eye_left,
+            group="eyes",
         ),
         GestureSpec(
-            GestureId.BROW_RAISE, "Levantar las cejas", "Levante las cejas y manténgalas",
+            GestureId.BROW_RAISE,
+            "Levantar las cejas",
+            "Levante las cejas y manténgalas",
             lambda f: f.brow_raise,
         ),
         GestureSpec(
-            GestureId.SMILE, "Sonreír", "Sonría ampliamente y mantenga la sonrisa",
-            lambda f: f.smile, group="mouth", direction=1, shifts_head=True,
+            GestureId.SMILE,
+            "Sonreír",
+            "Sonría ampliamente y mantenga la sonrisa",
+            lambda f: f.smile,
+            group="mouth",
+            direction=1,
+            shifts_head=True,
         ),
         # Misma medida que la sonrisa en sentido contrario: la boca se estrecha.
         GestureSpec(
-            GestureId.PUCKER, "Fruncir los labios", "Junte los labios como para dar un beso",
-            lambda f: f.smile, group="mouth", direction=-1, shifts_head=True,
+            GestureId.PUCKER,
+            "Fruncir los labios",
+            "Junte los labios como para dar un beso",
+            lambda f: f.smile,
+            group="mouth",
+            direction=-1,
+            shifts_head=True,
         ),
     )
 }
@@ -350,9 +375,8 @@ class GestureEngine:
                 continue
             settings, value = self._settings[gesture], activations[gesture]
             group = GESTURES[gesture].group
-            suppressed = (
-                (bool(group) and leaders.get(group) != gesture)
-                or (speaking and group == "mouth")
+            suppressed = (bool(group) and leaders.get(group) != gesture) or (
+                speaking and group == "mouth"
             )
             if value >= settings.threshold and not suppressed:
                 if tracker.active_since_ms is None:

@@ -15,8 +15,9 @@ from gestia.gestures import (
     positional_gesture_forming,
 )
 
-NEUTRAL = dict(yaw=0.5, pitch=0.55, eye_left=0.3, eye_right=0.3, mouth_open=0.05,
-               brow_raise=0.2, smile=0.4)
+NEUTRAL = dict(
+    yaw=0.5, pitch=0.55, eye_left=0.3, eye_right=0.3, mouth_open=0.05, brow_raise=0.2, smile=0.4
+)
 RANGES = {
     GestureId.MOUTH_OPEN: SignalRange(0.05, 0.45),
     GestureId.PUCKER: SignalRange(0.4, 0.33),
@@ -82,8 +83,9 @@ def test_cursor_is_held_while_a_click_gesture_forms() -> None:
 
 def test_click_lands_where_the_cursor_was_before_the_gesture() -> None:
     mouse = FakeMouse()
-    controller = PointerController(mouse, ScreenArea(0, 0, 1921, 1081),
-                                   PointerSettings(smoothing=0))
+    controller = PointerController(
+        mouse, ScreenArea(0, 0, 1921, 1081), PointerSettings(smoothing=0)
+    )
     controller.update((0.5, 0.5), (), 0)
     # Abrir la boca desplaza la inclinación medida: el cursor no debe seguirla.
     controller.update((0.5, 0.45), (), 33, hold_position=True)

@@ -1,4 +1,4 @@
-# GestIA — Sprint 4
+# GestIA
 
 Aplicación de escritorio local que muestra la webcam, detecta **un rostro** con MediaPipe
 Tasks Face Landmarker, dibuja sus puntos y gestiona pérdida y recuperación (Sprint 1, Épica E1).
@@ -44,6 +44,45 @@ reanudar suena un aviso, y mientras dura la pausa un cartel amarillo arriba de l
 indica cómo reanudar, aunque GestIA esté detrás de otra ventana. La utilidad de accesibilidad debe evaluarse con usuarios; no
 es un resultado demostrado.
 
+El Sprint 7 (Épica «Instalación, onboarding y aprendizaje») deja la app lista para personas
+sin conocimientos técnicos:
+
+| Historia | Qué incluye |
+|---|---|
+| P3-24 Instalación sencilla | Instalador `GestIA-Setup.exe` que se descarga desde la landing: no pide permisos de administrador ni instalar Python, incluye el modelo (funciona sin internet) y crea accesos directos. Se compila y publica solo en GitHub Releases al subir un tag. |
+| P3-25 Inicio automático | Interruptor **Iniciar con Windows** en la cabecera (y casilla en el instalador, marcada por defecto). Al encender el equipo GestIA se abre sola, abre la cámara y, si el perfil está calibrado, queda minimizada y ya controlando el cursor. |
+| P3-26 Tutorial y modo de práctica | Tras la primera calibración empieza solo un tutorial a pantalla completa: mover el puntero a cuatro objetivos y una lección por cada gesto activo con su acción real. **Practicar** abre un tablero libre. En ambos los gestos solo actúan en la pantalla del tutorial, nunca sobre el equipo. |
+
+## Instalar GestIA (personas usuarias)
+
+1. En la landing, pulse **Descargar para Windows**. Se descarga `GestIA-Setup.exe` desde
+   [GitHub Releases](https://github.com/Claudia02102/GestIA/releases/latest).
+2. Ábralo. Como el instalador aún no tiene firma digital, Windows puede mostrar «Windows
+   protegió su PC»: pulse **Más información** y luego **Ejecutar de todas formas**.
+3. Siga el asistente (Siguiente → Instalar). Deje marcada «Iniciar GestIA al encender el equipo»
+   si la persona va a usar el equipo sin ayuda. No hace falta ser administrador.
+4. Al terminar se abre GestIA: pulse **Iniciar**, siga la **calibración** y después el
+   **tutorial**. Desde ese momento, cada vez que se encienda el equipo GestIA se abre sola.
+
+Instalada, GestIA queda en `%LOCALAPPDATA%\Programs\GestIA` y los datos de cada persona
+(configuración, perfiles, métricas y el registro `gestia.log`) en `%LOCALAPPDATA%\GestIA`.
+Para desinstalar: *Configuración → Aplicaciones → GestIA → Desinstalar*. Se quitan el programa
+y el inicio automático, pero se conservan los perfiles por si se vuelve a instalar.
+
+**Inicio automático (P3-25).** El interruptor y el instalador usan el mismo valor `GestIA` de
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, así que siempre coinciden. Arranca
+`GestIA.exe --autostart`, que pulsa **Iniciar** solo; si el perfil aún no está calibrado, la
+ventana queda visible para que se abra la calibración. En desarrollo el interruptor también
+funciona (arranca `pythonw -m gestia --autostart --data-dir <carpeta del proyecto>`).
+
+**Tutorial y modo de práctica (P3-26).** Se construye con el mapeo y la calibración de la
+persona: solo enseña gestos activos y calibrados, empezando por los clics y terminando por la
+pausa. Las lecciones de clic piden llevar el puntero al círculo y hacer el gesto; si se hace otro
+gesto, explica cuál fue y cuál toca. Si se pierde el rostro, el puntero se detiene y lo avisa.
+Avanza solo; *Saltar lección*, *Reiniciar* y *Salir* son para quien asiste. Se ofrece una vez
+por perfil (queda guardado en el perfil) y se repite con **Tutorial**. En **Practicar** cada
+gesto muestra qué haría y se sale haciendo clic con un gesto sobre **Salir**.
+
 ## Requisitos
 
 - Windows 10 u 11 de 64 bits (x86-64).
@@ -55,7 +94,7 @@ Las versiones están fijadas en `pyproject.toml`. MediaPipe 0.10.21 dispone de w
 3.11 y 3.12 para Windows x86-64. El proyecto declara `opencv-python`; en Windows, MediaPipe
 instala además `opencv-contrib-python` como dependencia propia.
 
-## Instalación
+## Instalación para desarrollo
 
 En PowerShell, desde la raíz del proyecto:
 
@@ -198,6 +237,33 @@ luego **Calibrar** (los guiños venían desactivados y no estaban calibrados).
 Los perfiles creados en el Sprint 2 se cargan sin problema, pero «Fruncir los labios» aparece
 *Sin calibrar*: pulse **Calibrar** una vez para incluirlo.
 
+### Crear el instalador (P3-24)
+
+El workflow `.github/workflows/instalador.yml` lo hace en GitHub (Windows, Python 3.12): pruebas,
+descarga del modelo, ejecutable con PyInstaller (`packaging/gestia.spec`) e instalador con Inno
+Setup (`packaging/installer.iss`). Para publicar una versión:
+
+1. Actualice `version` en `pyproject.toml` (por ejemplo `0.7.0`) y únalo a `main`.
+2. Cree y suba el tag con la misma versión:
+
+   ```powershell
+   git tag v0.7.0
+   git push origin v0.7.0
+   ```
+
+3. Al terminar el workflow, la Release `v0.7.0` tendrá `GestIA-Setup.exe` y el botón de la
+   landing descargará esa versión (siempre apunta a `releases/latest`).
+
+Para probar sin publicar: *Actions → Instalador → Run workflow* deja el instalador como
+artefacto. En local (Windows, Python 3.12 y [Inno Setup 6](https://jrsoftware.org/isinfo.php)):
+
+```powershell
+python -m pip install . pyinstaller==6.11.1
+python tools/download_model.py
+pyinstaller packaging/gestia.spec --noconfirm
+iscc /DAppVersion=0.7.0 packaging/installer.iss
+```
+
 ## Configuración y datos
 
 `config.json` permite cambiar índice, resolución, FPS solicitados, periodo estable, antigüedad
@@ -220,6 +286,7 @@ landmarks ni información de identidad.
 
 ```powershell
 ruff check .
+ruff format --check .
 pytest
 ```
 
@@ -233,6 +300,41 @@ reales: las pruebas simuladas no demuestran FPS ni robustez física. Consulte ta
 [matriz de aceptación del Sprint 3](docs/MATRIZ_PRUEBAS_SPRINT_3.md), el
 [informe del Sprint 4](docs/INFORME_SPRINT_4.md) y la
 [matriz de aceptación del Sprint 4](docs/MATRIZ_PRUEBAS_SPRINT_4.md).
+
+## Integración continua y seguridad
+
+Cada pull request y cada push a `main` ejecutan el workflow [CI](.github/workflows/ci.yml) en
+Windows con Python 3.11 y 3.12 (P3-55):
+
+| Control | Herramienta | Qué bloquea |
+|---|---|---|
+| Estilo y formato | `ruff check .`, `ruff format --check .` | Errores de estilo o código sin formatear |
+| Pruebas | `pytest -m "not camara and not modelo"` | Cualquier prueba fallida |
+| Código inseguro (SAST, P3-59) | Reglas `S` de ruff (equivalentes a Bandit) | Cualquier hallazgo; las excepciones van por línea con `# noqa: Sxxx` y su motivo |
+| Dependencias (P3-56) | `pip-audit` (solo Python 3.12) | Cualquier vulnerabilidad conocida no documentada |
+| Secretos (P3-57) | `gitleaks` sobre todo el historial (trabajo aparte en Ubuntu) | Cualquier clave, token o contraseña |
+
+Las pruebas que necesiten la cámara o el modelo descargado se marcan con
+`@pytest.mark.camara` o `@pytest.mark.modelo` y el CI las excluye.
+
+**Excepciones de dependencias.** `pip-audit` no informa la gravedad, así que todo aviso falla
+el CI. Si una vulnerabilidad no tiene corrección compatible, se documenta en
+[.github/pip-audit-excepciones.txt](.github/pip-audit-excepciones.txt) con su ID, el motivo y
+la fecha de revisión. **Dependabot** ([.github/dependabot.yml](.github/dependabot.yml)) abre
+cada lunes PRs con las actualizaciones de librerías y de acciones de GitHub.
+
+**Secretos en local (P3-57).** Para que gitleaks revise cada commit antes de crearlo, instale
+el hook una vez por clon (la primera ejecución descarga gitleaks y tarda un poco):
+
+```powershell
+pip install -e ".[dev]"
+pre-commit install
+```
+
+Si bloquea un commit, quite el secreto del archivo (por ejemplo, páselo a `config.json`, que
+Git ignora). Los falsos positivos se documentan en [.gitleaks.toml](.gitleaks.toml) con su
+motivo. Si un secreto real llegó a subirse: primero revóquelo en el servicio y después
+límpielo del historial.
 
 ## Problemas frecuentes
 
@@ -280,6 +382,10 @@ reales: las pruebas simuladas no demuestran FPS ni robustez física. Consulte ta
 - `prediction.py`, `lexicon_es.py`: predicción de palabras con diccionario local y aprendizaje.
 - `feedback.py`: estado que muestra el indicador, sonidos y temporizador de descanso.
 - `theme.py`: paleta de marca (modo claro y oscuro) y hojas de estilo de toda la interfaz.
+- `paths.py`: carpetas en desarrollo e instalada (programa y datos de la persona).
+- `autostart.py`: inicio automático con Windows (clave Run del usuario).
+- `tutorial.py`, `ui_tutorial.py`: lecciones del tutorial y modo de práctica, y su ventana.
+- `packaging/`: ejecutable (PyInstaller), instalador (Inno Setup) e ícono.
 - `ui_calibration.py`, `ui_profile.py`, `ui_widgets.py`, `ui_keyboard.py`,
   `ui_quick_menu.py`: asistente, panel de gestos, puntero virtual, ventana del teclado y menú de
   acciones rápidas.

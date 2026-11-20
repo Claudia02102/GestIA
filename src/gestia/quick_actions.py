@@ -86,7 +86,8 @@ class PynputSystemBackend:
     def launch(self, target: str) -> None:
         import os
 
-        os.startfile(target)  # type: ignore[attr-defined]  # solo existe en Windows
+        # Seguro: «target» siempre sale del diccionario fijo APPS, nunca del usuario.
+        os.startfile(target)  # type: ignore[attr-defined]  # noqa: S606  # solo en Windows
 
     def close_window(self) -> None:
         """Pide a la ventana activa que se cierre (WM_CLOSE), como su botón ✕.

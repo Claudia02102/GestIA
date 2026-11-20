@@ -147,8 +147,9 @@ GRID_COLUMNS = COLUMNS + 3
 GRID_ROWS = len(LAYOUTS[Layout.QWERTY]) + 3
 
 
-def fit_key_size(requested: int, available_width: int, available_height: int,
-                 spacing: int = 4, margin: int = 16) -> int:
+def fit_key_size(
+    requested: int, available_width: int, available_height: int, spacing: int = 4, margin: int = 16
+) -> int:
     """Tamaño de tecla más cercano al pedido con el que el teclado cabe en la pantalla."""
     by_width = (available_width - margin * 2 - spacing * (GRID_COLUMNS - 1)) // GRID_COLUMNS
     by_height = (available_height - margin * 2 - spacing * (GRID_ROWS - 1)) // GRID_ROWS
@@ -231,7 +232,7 @@ class TypingSession:
     def choose(self, suggestion: str) -> None:
         """Completa la palabra en curso con la sugerencia y añade un espacio."""
         if suggestion.startswith(self.word):
-            self.backend.type_text(suggestion[len(self.word):] + " ")
+            self.backend.type_text(suggestion[len(self.word) :] + " ")
         else:
             # Difieren tildes o mayúsculas: se borra lo escrito y se escribe completa.
             for _ in self.word:

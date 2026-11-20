@@ -84,7 +84,5 @@ def extract_features(landmarks: Sequence[Point], aspect: float) -> FaceFeatures 
             dist(LIP_UPPER_INNER, LIP_LOWER_INNER), dist(MOUTH_INNER_RIGHT, MOUTH_INNER_LEFT)
         ),
         brow_raise=ratio(brow, interocular),
-        smile=ratio(
-            dist(MOUTH_CORNER_RIGHT, MOUTH_CORNER_LEFT), dist(CHEEK_RIGHT, CHEEK_LEFT)
-        ),
+        smile=ratio(dist(MOUTH_CORNER_RIGHT, MOUTH_CORNER_LEFT), dist(CHEEK_RIGHT, CHEEK_LEFT)),
     )

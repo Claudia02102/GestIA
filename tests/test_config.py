@@ -7,9 +7,7 @@ from gestia.config import AppConfig
 
 def test_invalid_confidence_is_rejected(tmp_path) -> None:
     path = tmp_path / "bad.json"
-    path.write_text(
-        json.dumps({"vision": {"min_tracking_confidence": 1.5}}), encoding="utf-8"
-    )
+    path.write_text(json.dumps({"vision": {"min_tracking_confidence": 1.5}}), encoding="utf-8")
     with pytest.raises(ValueError, match="seguimiento"):
         AppConfig.load(path)
 

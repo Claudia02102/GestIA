@@ -1,0 +1,8 @@
+# Excepciones de pip-audit (P3-56).
+#
+# Una vulnerabilidad solo se ignora si está documentada aquí, una por línea:
+#   ID [alias...] | motivo | fecha de la próxima revisión (AAAA-MM-DD)
+# El CI lee los ID de la primera columna y los pasa a «pip-audit --ignore-vuln».
+# Al llegar la fecha de revisión, comprobar si ya hay corrección compatible y quitar la línea.
+
+PYSEC-2026-1805 GHSA-7gcm-g887-7qv7 | protobuf 4.25.9 (CVE-2026-0994, DoS en json_format.ParseDict con mensajes Any anidados). La corrección solo existe en protobuf 5.29.6 y 6.33.5, pero mediapipe==0.10.21 exige protobuf<5. GestIA no usa ParseDict ni procesa protobuf de fuentes externas: MediaPipe solo lee su modelo local. | 2027-02-19

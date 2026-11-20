@@ -14,8 +14,9 @@ from gestia.features import FaceFeatures
 from gestia.gestures import GestureId, SignalRange
 
 CONFIG = CalibrationConfig()
-NEUTRAL = dict(yaw=0.5, pitch=0.55, eye_left=0.3, eye_right=0.3, mouth_open=0.05,
-               brow_raise=0.2, smile=0.4)
+NEUTRAL = dict(
+    yaw=0.5, pitch=0.55, eye_left=0.3, eye_right=0.3, mouth_open=0.05, brow_raise=0.2, smile=0.4
+)
 
 
 def face(**changes: float) -> FaceFeatures:

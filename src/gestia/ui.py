@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from gestia import theme
 from gestia.app_context import foreground_app
+from gestia.autostart import Autostart
 from gestia.calibration import Calibration, Recenterer, RecenterStatus
 from gestia.config import AppConfig, resolve_from_project
 from gestia.control import (
@@ -57,10 +58,12 @@ from gestia.keyboard import PynputKeyboardBackend
 from gestia.persistence import MetricsWriter
 from gestia.profiles import Profile, ProfileStore
 from gestia.quick_actions import PynputSystemBackend
+from gestia.tutorial import TutorialSession, build_lessons, practice_lessons
 from gestia.ui_calibration import CalibrationDialog
 from gestia.ui_keyboard import KeyboardWindow
 from gestia.ui_profile import GesturePanel
 from gestia.ui_quick_menu import QuickMenuWindow
+from gestia.ui_tutorial import TutorialDialog
 from gestia.ui_widgets import (
     BreakReminder,
     LogoMark,
@@ -130,9 +133,13 @@ STATE_TEXT = {
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, config: AppConfig, project_root: Path) -> None:
+    def __init__(self, config: AppConfig, project_root: Path, autostart: bool = False) -> None:
         super().__init__()
         self.config, self.project_root = config, project_root
+        # P3-25: arranque con Windows (clave Run del usuario, la misma que usa el instalador).
+        self.autostart = Autostart.for_system(project_root)
+        self.autostart.refresh()
+        self.tutorial: TutorialDialog | None = None
         self.worker: PipelineWorker | None = None
         self.thread: QThread | None = None
         self.metrics = MetricsWriter(resolve_from_project(config.metrics.path, project_root))
@@ -170,6 +177,9 @@ class MainWindow(QMainWindow):
         self.active_app_timer.timeout.connect(self._show_active_app)
         self.active_app_timer.start()
         self._show_active_app()
+        if autostart:
+            # Arranque con Windows: la cámara se abre sola para usar el equipo sin ayuda.
+            QTimer.singleShot(800, self.start_tracking)
 
     def _build_ui(self) -> None:
         central = QWidget()
@@ -230,11 +240,28 @@ class MainWindow(QMainWindow):
         self.recenter_button = QPushButton("Recentrar")
         self.recenter_button.setEnabled(False)
         self.recenter_button.clicked.connect(self.start_recenter)
+        # P3-26: tutorial guiado y modo de práctica (los gestos no actúan sobre el equipo).
+        self.tutorial_button = QPushButton("Tutorial")
+        self.tutorial_button.setToolTip("Aprende tus gestos paso a paso sin tocar el equipo")
+        self.tutorial_button.setEnabled(False)
+        self.tutorial_button.clicked.connect(lambda: self.open_tutorial(practice=False))
+        self.practice_button = QPushButton("Practicar")
+        self.practice_button.setToolTip("Ensaya los gestos libremente sin tocar el equipo")
+        self.practice_button.setEnabled(False)
+        self.practice_button.clicked.connect(lambda: self.open_tutorial(practice=True))
         self.profile_status = QLabel()
         for widget in (
-            QLabel("Perfil:"), self.profile_selector, new_profile, self.delete_button,
-            export_profile, import_profile, restore, self.calibrate_button,
+            QLabel("Perfil:"),
+            self.profile_selector,
+            new_profile,
+            self.delete_button,
+            export_profile,
+            import_profile,
+            restore,
+            self.calibrate_button,
             self.recenter_button,
+            self.tutorial_button,
+            self.practice_button,
             self.profile_status,
         ):
             profile_bar.addWidget(widget)
@@ -261,8 +288,12 @@ class MainWindow(QMainWindow):
         hotkey_label = QLabel(hotkey if self.hotkeys.active else "")
         hotkey_label.setObjectName("muted")
         for widget in (
-            self.control_check, self.pause_button, self.keyboard_button,
-            self.quick_menu_button, self.mode_label, hotkey_label,
+            self.control_check,
+            self.pause_button,
+            self.keyboard_button,
+            self.quick_menu_button,
+            self.mode_label,
+            hotkey_label,
         ):
             control_bar.addWidget(widget)
         control_bar.addStretch()
@@ -348,9 +379,43 @@ class MainWindow(QMainWindow):
         bar.addSpacing(8)
         bar.addWidget(tagline)
         bar.addStretch()
+        self.autostart_switch = ToggleSwitch("Iniciar con Windows")
+        self.autostart_switch.setChecked(self.autostart.is_enabled())
+        self.autostart_switch.setEnabled(self.autostart.available)
+        self.autostart_switch.setToolTip(
+            "Abre GestIA y la cámara al iniciar sesión en Windows, sin ayuda"
+            if self.autostart.available
+            else "Solo disponible en Windows"
+        )
+        self.autostart_switch.toggled.connect(self._autostart_toggled)
+        autostart_label = QLabel("Iniciar con Windows")
+        autostart_label.setObjectName("muted")
+        autostart_label.setBuddy(self.autostart_switch)
+        bar.addWidget(autostart_label)
+        bar.addWidget(self.autostart_switch)
+        bar.addSpacing(16)
         bar.addWidget(dark_label)
         bar.addWidget(self.dark_switch)
         return header
+
+    @Slot(bool)
+    def _autostart_toggled(self, enabled: bool) -> None:
+        """P3-25: activar o quitar el arranque automático con Windows."""
+        try:
+            self.autostart.set_enabled(enabled)
+        except OSError as exc:
+            QMessageBox.warning(
+                self, "Iniciar con Windows", f"No se pudo cambiar el inicio automático: {exc}"
+            )
+            self.autostart_switch.blockSignals(True)
+            self.autostart_switch.setChecked(self.autostart.is_enabled())
+            self.autostart_switch.blockSignals(False)
+            return
+        self.panel.log_message(
+            "GestIA se abrirá al iniciar Windows."
+            if enabled
+            else "GestIA ya no se abrirá al iniciar Windows."
+        )
 
     # --- Estilo visual y modo oscuro --------------------------------------------------------
 
@@ -360,9 +425,7 @@ class MainWindow(QMainWindow):
         self.dark_switch.blockSignals(True)
         self.dark_switch.setChecked(dark)
         self.dark_switch.blockSignals(False)
-        self.brand_label.setText(
-            f'Gest<span style="color: {palette.accent_text};">IA</span>'
-        )
+        self.brand_label.setText(f'Gest<span style="color: {palette.accent_text};">IA</span>')
         for window in (self.keyboard, self.quick_menu):
             if window is not None:
                 window.setStyleSheet(theme.keyboard_stylesheet(palette))
@@ -371,9 +434,7 @@ class MainWindow(QMainWindow):
         self._update_profile_status()
         if self.controller is not None and self.control_mode is not None:
             text, token = MODE_TEXT[self.control_mode]
-            self.mode_label.setStyleSheet(
-                f"font-weight: 600; color: {getattr(palette, token)};"
-            )
+            self.mode_label.setStyleSheet(f"font-weight: 600; color: {getattr(palette, token)};")
         self.pointer.update()
 
     @Slot(bool)
@@ -466,8 +527,10 @@ class MainWindow(QMainWindow):
         geometry, ratio = screen.geometry(), screen.devicePixelRatio()
         # Qt trabaja en píxeles lógicos; SendInput, en físicos (escalado de Windows).
         area = ScreenArea(
-            round(geometry.x() * ratio), round(geometry.y() * ratio),
-            round(geometry.width() * ratio), round(geometry.height() * ratio),
+            round(geometry.x() * ratio),
+            round(geometry.y() * ratio),
+            round(geometry.width() * ratio),
+            round(geometry.height() * ratio),
         )
         try:
             backend = PynputBackend()
@@ -508,9 +571,7 @@ class MainWindow(QMainWindow):
     def _tick_breaks(self) -> None:
         paused = self.controller is not None and self.controller.paused
         active = (
-            self.thread is not None
-            and self.tracking_state is TrackingState.TRACKING
-            and not paused
+            self.thread is not None and self.tracking_state is TrackingState.TRACKING and not paused
         )
         if self.break_timer.tick(time.monotonic(), active):
             self.show_break_reminder()
@@ -579,9 +640,7 @@ class MainWindow(QMainWindow):
             self.store.set_active(profile_id)
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "Perfil", f"No se pudo cargar el perfil: {exc}")
-            self.profile_selector.setCurrentIndex(
-                self.profile_selector.findData(self.profile.id)
-            )
+            self.profile_selector.setCurrentIndex(self.profile_selector.findData(self.profile.id))
             return
         self.wizard_offered = False
         self._activate_profile(profile)
@@ -651,7 +710,8 @@ class MainWindow(QMainWindow):
             self.store.set_active(profile.id)
         except (OSError, ValueError) as exc:
             QMessageBox.warning(
-                self, "Importar perfil",
+                self,
+                "Importar perfil",
                 f"No se importó el archivo y la configuración actual no cambió.\n\n{exc}",
             )
             return
@@ -710,7 +770,8 @@ class MainWindow(QMainWindow):
         """
         controller = self.controller
         locked = controller is not None and controller.mode in (
-            ControlMode.DRAGGING, ControlMode.SCROLLING,
+            ControlMode.DRAGGING,
+            ControlMode.SCROLLING,
         )
         if not locked:
             self.action_app = foreground_app()
@@ -777,12 +838,71 @@ class MainWindow(QMainWindow):
         self._save_profile()
         self.panel.set_profile(self.profile)
         self.panel.log_message("Calibración guardada en el perfil.")
+        if not self.profile.tutorial_done and self.profile.selection_gestures():
+            # P3-26: la primera vez, el tutorial empieza solo al cerrar el asistente.
+            QTimer.singleShot(600, lambda: self.open_tutorial(practice=False))
 
     @Slot()
     def _wizard_closed(self) -> None:
         if self.wizard is not None:
             self.wizard.deleteLater()
         self.wizard = None
+
+    # --- Tutorial y modo de práctica (P3-26) -------------------------------------------------
+
+    def open_tutorial(self, practice: bool) -> None:
+        if self.tutorial is not None or self.wizard is not None or self.worker is None:
+            return
+        if self.profile.calibration is None:
+            self.panel.log_message("Calibre el perfil antes del tutorial.")
+            return
+        if self.controller is not None:
+            # Durante el tutorial el cursor real no se mueve ni hace clic.
+            self.controller.release_all(cancel=True)
+        self.keyboard_button.setChecked(False)
+        self.quick_menu_button.setChecked(False)
+        if practice:
+            lessons = practice_lessons()
+        else:
+            lessons = build_lessons(
+                self.profile.gestures, self.profile.actions, self.profile.is_gesture_calibrated
+            )
+        self.tutorial = TutorialDialog(
+            TutorialSession(lessons), lambda: self.feedback.play(Sound.GESTURE), self
+        )
+        self.tutorial.completed.connect(self._tutorial_completed)
+        self.tutorial.finished.connect(self._tutorial_closed)
+        self.tutorial.setModal(True)
+        self.tutorial.showFullScreen()
+        self.panel.log_message("Modo de práctica abierto." if practice else "Tutorial abierto.")
+
+    @Slot(bool)
+    def _tutorial_completed(self, completed: bool) -> None:
+        if completed:
+            self.panel.log_message("Tutorial completado.")
+
+    @Slot()
+    def _tutorial_closed(self) -> None:
+        if self.tutorial is None:
+            return
+        practice = self.tutorial.session.practice
+        self.tutorial.deleteLater()
+        self.tutorial = None
+        if not practice and not self.profile.tutorial_done:
+            # Se ofrece una sola vez; después queda en el botón «Tutorial».
+            self.profile.tutorial_done = True
+            self._save_profile()
+
+    def _feed_tutorial(self, packet: DisplayPacket) -> None:
+        """Los gestos se traducen con el mapeo general y solo actúan en el tutorial."""
+        if self.tutorial is None:
+            return
+        events = []
+        for event in packet.gestures.events:
+            action = self.profile.action_for(event.gesture, None)
+            if action is not None:
+                events.append(replace(event, action=action))
+        self.tutorial.feed(self._pointer_for(packet), events, packet.result.timestamp_ms)
 
     @Slot()
     def start_recenter(self) -> None:
@@ -820,6 +940,8 @@ class MainWindow(QMainWindow):
         self.camera_selector.setEnabled(False)
         self.calibrate_button.setEnabled(True)
         self.recenter_button.setEnabled(True)
+        self.tutorial_button.setEnabled(True)
+        self.practice_button.setEnabled(True)
         self.worker = PipelineWorker(self.config, self.project_root)
         self.worker.apply_profile(self.profile)
         self._create_controller()
@@ -848,11 +970,12 @@ class MainWindow(QMainWindow):
             self.wizard.feed(packet)
             return
         self.panel.show_activations(packet.gestures)
+        if self.tutorial is not None:
+            self._feed_tutorial(packet)
+            return
         tracking = packet.state is TrackingState.TRACKING
         calibration = self.profile.calibration
-        pointer = None
-        if tracking and packet.features is not None and calibration is not None:
-            pointer = calibration.head.to_pointer(packet.features, self.config.calibration.reach)
+        pointer = self._raw_pointer(packet)
         self.pointer.set_pointer(
             None if pointer is None else apply_speed(pointer, self.profile.pointer.speed)
         )
@@ -863,7 +986,8 @@ class MainWindow(QMainWindow):
             # P3-22: mientras la persona habla, abrir la boca o sonreír no ejecuta acciones.
             self.speaking = packet.gestures.speaking
             self.panel.log_message(
-                "Hablando: los gestos de la boca esperan." if self.speaking
+                "Hablando: los gestos de la boca esperan."
+                if self.speaking
                 else "Gestos de la boca disponibles otra vez."
             )
         os_events = []
@@ -900,6 +1024,21 @@ class MainWindow(QMainWindow):
             self._show_control(status)
         self._feed_recenter(packet)
 
+    def _raw_pointer(self, packet: DisplayPacket) -> tuple[float, float] | None:
+        calibration = self.profile.calibration
+        if (
+            packet.state is not TrackingState.TRACKING
+            or packet.features is None
+            or calibration is None
+        ):
+            return None
+        return calibration.head.to_pointer(packet.features, self.config.calibration.reach)
+
+    def _pointer_for(self, packet: DisplayPacket) -> tuple[float, float] | None:
+        """Puntero normalizado con la velocidad del perfil, como el cursor real."""
+        pointer = self._raw_pointer(packet)
+        return None if pointer is None else apply_speed(pointer, self.profile.pointer.speed)
+
     def _render_frame(self, packet: DisplayPacket) -> None:
         import cv2
 
@@ -915,9 +1054,7 @@ class MainWindow(QMainWindow):
                 ys.append(y)
                 cv2.circle(frame, (x, y), 1, (74, 222, 128), -1)
             if xs and ys:
-                cv2.rectangle(
-                    frame, (min(xs), min(ys)), (max(xs), max(ys)), (34, 197, 94), 2
-                )
+                cv2.rectangle(frame, (min(xs), min(ys)), (max(xs), max(ys)), (34, 197, 94), 2)
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         image = QImage(
             rgb.data, width, height, int(rgb.strides[0]), QImage.Format.Format_RGB888
@@ -962,6 +1099,8 @@ class MainWindow(QMainWindow):
         self.thread = None
         if self.wizard is not None:
             self.wizard.reject()
+        if self.tutorial is not None:
+            self.tutorial.reject()
         if self.controller is not None:
             self.controller.release_all(cancel=True)
             self.controller = None
@@ -977,6 +1116,8 @@ class MainWindow(QMainWindow):
         self.camera_selector.setEnabled(True)
         self.calibrate_button.setEnabled(False)
         self.recenter_button.setEnabled(False)
+        self.tutorial_button.setEnabled(False)
+        self.practice_button.setEnabled(False)
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         if self.controller is not None:

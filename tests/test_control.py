@@ -62,8 +62,12 @@ def test_cursor_follows_head_and_reaches_all_edges() -> None:
     controller, mouse = make()
     controller.update(CENTER, (), 0)
     assert mouse.position == (960, 540)
-    for pointer, expected in (((0.0, 0.5), (0, 540)), ((1.0, 0.5), (1920, 540)),
-                              ((0.5, 0.0), (960, 0)), ((0.5, 1.0), (960, 1080))):
+    for pointer, expected in (
+        ((0.0, 0.5), (0, 540)),
+        ((1.0, 0.5), (1920, 540)),
+        ((0.5, 0.0), (960, 0)),
+        ((0.5, 1.0), (960, 1080)),
+    ):
         controller.update(pointer, (), 100)
         assert mouse.position == expected
 

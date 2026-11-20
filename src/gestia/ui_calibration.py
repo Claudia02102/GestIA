@@ -152,8 +152,10 @@ class CalibrationDialog(QDialog):
             QApplication.beep()
         if update.message:
             p = self.palette_
-            color = p.danger if update.step_failed else (
-                p.success if update.step_completed else p.warning
+            color = (
+                p.danger
+                if update.step_failed
+                else (p.success if update.step_completed else p.warning)
             )
             self.feedback.setStyleSheet(f"font-size: 20px; color: {color};")
             self.feedback.setText(update.message)
@@ -180,7 +182,8 @@ class CalibrationDialog(QDialog):
         image = QImage(rgb.data, width, height, int(rgb.strides[0]), QImage.Format.Format_RGB888)
         self.camera.setPixmap(
             QPixmap.fromImage(image.copy()).scaled(
-                self.camera.size(), Qt.AspectRatioMode.KeepAspectRatio,
+                self.camera.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
         )
