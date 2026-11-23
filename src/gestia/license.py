@@ -35,8 +35,8 @@ LOGGER = logging.getLogger(__name__)
 
 SUPABASE_URL = "https://xrifigexqggmbswmljqy.supabase.co"
 SUPABASE_PUBLISHABLE_KEY = "sb_publishable_25IBM6E74kTVKZbKrqmKww_ZLBZcb69"
-# Dirección de la landing, para los enlaces «Crear cuenta» y «Comprar». Vacía: solo texto.
-LANDING_URL = os.environ.get("GESTIA_LANDING_URL", "")
+# Landing: enlaces «Crear cuenta o comprar» de la ventana de inicio de sesión.
+LANDING_URL = os.environ.get("GESTIA_LANDING_URL", "https://autonomia-seven.vercel.app")
 VALID_DAYS = 30
 # En los últimos días del plazo, la app intenta renovar sola al abrirse (si hay internet).
 RENEW_BEFORE_DAYS = 7
