@@ -108,6 +108,15 @@ def main(argv: list[str] | None = None) -> int:
 
     application = QApplication(sys.argv[:1])
     locale.setlocale(locale.LC_NUMERIC, "C")
+
+    # P3-62: la versión instalada pide iniciar sesión con una cuenta que tenga licencia.
+    from gestia.license import create_manager, license_required
+
+    if license_required(is_installed()):
+        from gestia.ui_login import ensure_license
+
+        if not ensure_license(create_manager(project_root)):
+            return 0
     window = MainWindow(config, project_root, autostart=args.autostart)
     if args.autostart and window.profile.calibrated:
         # Al iniciar Windows no tapa el escritorio: queda en la barra de tareas, ya controlando.

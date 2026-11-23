@@ -20,6 +20,7 @@ class QuickAction(StrEnum):
     OPEN_BROWSER = "open_browser"
     OPEN_NOTEPAD = "open_notepad"
     OPEN_CALCULATOR = "open_calculator"
+    OPEN_YOUTUBE = "open_youtube"
 
 
 QUICK_ACTION_TEXT = {
@@ -31,6 +32,7 @@ QUICK_ACTION_TEXT = {
     QuickAction.OPEN_BROWSER: "Navegador",
     QuickAction.OPEN_NOTEPAD: "Bloc de notas",
     QuickAction.OPEN_CALCULATOR: "Calculadora",
+    QuickAction.OPEN_YOUTUBE: "YouTube",
 }
 
 # Atajos de Windows; las teclas usan los nombres de ``pynput.keyboard.Key``.
@@ -44,6 +46,8 @@ APPS: dict[QuickAction, str] = {
     QuickAction.OPEN_BROWSER: "https://www.google.com",
     QuickAction.OPEN_NOTEPAD: "notepad.exe",
     QuickAction.OPEN_CALCULATOR: "calc.exe",
+    # P3-65: se abre en el navegador predeterminado, como el botón «Navegador».
+    QuickAction.OPEN_YOUTUBE: "https://www.youtube.com",
 }
 # Un gesto involuntario no debe cerrar una ventana: se pide confirmación antes.
 NEEDS_CONFIRMATION = frozenset({QuickAction.CLOSE_WINDOW})

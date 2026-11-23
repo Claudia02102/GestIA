@@ -99,6 +99,8 @@ def test_profile_file_contains_no_images_or_landmarks(tmp_path) -> None:
         "keyboard",
         "feedback",
         "appearance",
+        "tilt",
+        "emergency",
         "onboarding",
     }
     assert "landmarks" not in json.dumps(raw)

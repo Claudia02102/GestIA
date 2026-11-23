@@ -16,3 +16,10 @@ description = "Nombre de la caché del modelo de MediaPipe en GitHub Actions"
 condition = "AND"
 paths = ['''^\.github/actions/preparar/action\.yml$''']
 regexes = ['''face-landmarker-float16-v\d+''']
+
+# No es un secreto (P3-62): la clave PUBLICABLE de Supabase (sb_publishable_...) va en la app
+# por diseño, igual que en la landing; RLS decide qué ve cada cuenta. La clave service_role
+# (sb_secret_... o JWT con role=service_role) nunca debe aparecer y sí se detectaría.
+[[allowlists]]
+description = "Clave publicable de Supabase"
+regexes = ['''sb_publishable_[A-Za-z0-9_-]+''']

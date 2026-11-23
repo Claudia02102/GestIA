@@ -53,6 +53,15 @@ sin conocimientos técnicos:
 | P3-25 Inicio automático | Interruptor **Iniciar con Windows** en la cabecera (y casilla en el instalador, marcada por defecto). Al encender el equipo GestIA se abre sola, abre la cámara y, si el perfil está calibrado, queda minimizada y ya controlando el cursor. |
 | P3-26 Tutorial y modo de práctica | Tras la primera calibración empieza solo un tutorial a pantalla completa: mover el puntero a cuatro objetivos y una lección por cada gesto activo con su acción real. **Practicar** abre un tablero libre. En ambos los gestos solo actúan en la pantalla del tutorial, nunca sobre el equipo. |
 
+El Sprint 8 añade cuenta y licencia, y tres funciones de accesibilidad:
+
+| Historia | Qué incluye |
+|---|---|
+| P3-62 Inicio de sesión y licencia | La versión instalada pide, la primera vez, el correo y la contraseña de la cuenta creada en la landing (el mismo proyecto de Supabase). Si la cuenta tiene la compra, el equipo queda activado (máximo 3). Luego **funciona sin internet**: solo vuelve a validar cada 30 días (y renueva sola en los últimos 7 días si hay conexión). Se guarda cifrado con DPAPI el token de sesión, nunca la contraseña. En desarrollo no se pide salvo con `GESTIA_REQUIRE_LICENSE=1`. |
+| P3-64 Inclinar la cabeza → acciones rápidas | Inclinar la cabeza hacia un hombro (18° por defecto) y mantenerla medio segundo abre el menú; el mismo gesto lo cierra. Mientras la cabeza está inclinada el cursor se fija y los demás gestos esperan (evita guiños falsos). Se ajusta en **Atajos y auxilio**. |
+| P3-65 YouTube | Botón **YouTube** en las acciones rápidas: abre youtube.com en el navegador predeterminado. |
+| P3-66 Gesto de auxilio | Con un contacto configurado en **Atajos y auxilio**, mantener las cejas levantadas 3 s muestra una confirmación grande: abrir la boca o pulsar **Sí, enviar** abre WhatsApp Desktop en el chat del contacto y envía el mensaje de auxilio (sin WhatsApp Desktop, abre WhatsApp Web con el mensaje listo). Si no se confirma, se cancela sola a los 10 s. Funciona también en pausa. Soltar las cejas antes de 3 s recentra como siempre. No hace llamadas. |
+
 ## Instalar GestIA (personas usuarias)
 
 1. En la landing, pulse **Descargar para Windows**. Se descarga `GestIA-Setup.exe` desde
