@@ -64,3 +64,9 @@ def test_menu_floats_without_taking_focus(menu) -> None:
     assert flags & Qt.WindowType.WindowStaysOnTopHint
     assert flags & Qt.WindowType.WindowDoesNotAcceptFocus
     assert window.testAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+
+
+def test_youtube_button_in_the_menu(menu) -> None:
+    window, system = menu
+    window.buttons[QuickAction.OPEN_YOUTUBE].click()
+    assert system.calls == [("launch", "https://www.youtube.com")]

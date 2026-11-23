@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
     QLabel,
+    QLineEdit,
     QListWidget,
     QMessageBox,
     QProgressBar,
@@ -24,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from gestia.app_context import normalize_app_name, open_apps
+from gestia.emergency import MAX_HOLD_MS, MAX_MESSAGE, MIN_HOLD_MS, normalize_phone
 from gestia.feedback import MAX_BREAK_MINUTES, MIN_BREAK_MINUTES
 from gestia.gestures import (
     ACTION_TEXT,
@@ -37,6 +39,7 @@ from gestia.gestures import (
     has_left_click,
     remap_action,
 )
+from gestia.head_tilt import MAX_ANGLE_DEG, MIN_ANGLE_DEG
 from gestia.keyboard import (
     LAYOUT_TEXT,
     MAX_KEY_SIZE,
@@ -55,6 +58,7 @@ class GesturePanel(QTabWidget):
 
     changed = Signal()
     reminder_test_requested = Signal()
+    emergency_test_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -111,6 +115,7 @@ class GesturePanel(QTabWidget):
         self.addTab(self._build_pointer_page(), "Puntero")
         self.addTab(self._build_keyboard_page(), "Teclado")
         self.addTab(self._build_feedback_page(), "Avisos")
+        self.addTab(self._build_assist_page(), "Atajos y auxilio")
 
         self.events = QListWidget()
         self.addTab(self.events, "Eventos")
@@ -390,6 +395,108 @@ class GesturePanel(QTabWidget):
         self.break_minutes.valueChanged.connect(self._feedback_changed)
         return page
 
+    def _build_assist_page(self) -> QWidget:
+        """P3-64 (inclinar la cabeza) y P3-66 (gesto de auxilio por WhatsApp)."""
+        page = QWidget()
+        form = QFormLayout(page)
+        form.addRow(QLabel("<b>Acciones rápidas</b>"))
+        self.tilt_check = QCheckBox("Inclinar la cabeza hacia un hombro abre y cierra el menú")
+        self.tilt_angle = QSpinBox()
+        self.tilt_angle.setRange(MIN_ANGLE_DEG, MAX_ANGLE_DEG)
+        self.tilt_angle.setSuffix(" °")
+        form.addRow(self.tilt_check)
+        form.addRow("Inclinación necesaria:", self.tilt_angle)
+
+        form.addRow(QLabel("<b>Gesto de auxilio</b>"))
+        self.emergency_check = QCheckBox(
+            "Mantener las cejas levantadas envía un mensaje de auxilio por WhatsApp"
+        )
+        self.emergency_name = QLineEdit()
+        self.emergency_name.setMaxLength(60)
+        self.emergency_name.setPlaceholderText("Ej.: Mamá")
+        self.emergency_phone = QLineEdit()
+        self.emergency_phone.setPlaceholderText("Ej.: 987 654 321 o +51 987 654 321")
+        self.emergency_message = QLineEdit()
+        self.emergency_message.setMaxLength(MAX_MESSAGE)
+        self.emergency_hold = QSpinBox()
+        self.emergency_hold.setRange(MIN_HOLD_MS // 1000, MAX_HOLD_MS // 1000)
+        self.emergency_hold.setSuffix(" s")
+        self.emergency_status = QLabel()
+        self.emergency_status.setWordWrap(True)
+        test = QPushButton("Probar la confirmación (no envía nada)")
+        test.clicked.connect(self.emergency_test_requested)
+        form.addRow(self.emergency_check)
+        form.addRow("Contacto:", self.emergency_name)
+        form.addRow("Número de WhatsApp:", self.emergency_phone)
+        form.addRow("Mensaje:", self.emergency_message)
+        form.addRow("Mantener las cejas:", self.emergency_hold)
+        form.addRow(self.emergency_status)
+        form.addRow(test)
+        note = QLabel(
+            "Al mantener las cejas levantadas aparece una confirmación: abra la boca o pulse "
+            "«Enviar» para mandar el mensaje; si no hace nada, se cancela sola a los 10 s. "
+            "Necesita WhatsApp Desktop con la sesión iniciada (sin él se abre WhatsApp Web con el "
+            "mensaje listo). Soltar las cejas antes de tiempo sigue recentrando como siempre."
+        )
+        note.setWordWrap(True)
+        form.addRow(note)
+        for check in (self.tilt_check, self.emergency_check):
+            check.toggled.connect(self._assist_changed)
+        for spin in (self.tilt_angle, self.emergency_hold):
+            spin.valueChanged.connect(self._assist_changed)
+        for field in (self.emergency_name, self.emergency_phone, self.emergency_message):
+            field.editingFinished.connect(self._assist_changed)
+        return page
+
+    def _assist_status(self) -> None:
+        phone = self.emergency_phone.text().strip()
+        if not self.emergency_check.isChecked():
+            text = "Desactivado."
+        elif not phone:
+            text = "Falta el número de WhatsApp del contacto."
+        elif not normalize_phone(phone):
+            text = "El número no es válido. Incluya el código de país si no es de Perú."
+        elif self.profile is not None and not self.profile.is_gesture_calibrated(
+            GestureId.BROW_RAISE
+        ):
+            text = "Listo, pero falta calibrar «Levantar las cejas» para poder usarlo."
+        else:
+            text = f"Listo: se enviará a +{normalize_phone(phone)}."
+        self.emergency_status.setText(text)
+
+    def _assist_changed(self) -> None:
+        self.tilt_angle.setEnabled(self.tilt_check.isChecked())
+        self._assist_status()
+        if self._loading or self.profile is None:
+            return
+        self.profile.tilt.enabled = self.tilt_check.isChecked()
+        self.profile.tilt.angle_deg = self.tilt_angle.value()
+        emergency = self.profile.emergency
+        emergency.enabled = self.emergency_check.isChecked()
+        emergency.contact_name = self.emergency_name.text().strip()[:60]
+        phone = self.emergency_phone.text().strip()
+        if not phone or normalize_phone(phone):
+            emergency.phone = phone  # un número no válido no se guarda
+        message = self.emergency_message.text().strip()
+        if message:
+            emergency.message = message[:MAX_MESSAGE]
+        emergency.hold_ms = self.emergency_hold.value() * 1000
+        self.changed.emit()
+
+    def _load_assist(self) -> None:
+        if self.profile is None:
+            raise RuntimeError("No hay un perfil cargado")
+        tilt, emergency = self.profile.tilt, self.profile.emergency
+        self.tilt_check.setChecked(tilt.enabled)
+        self.tilt_angle.setValue(tilt.angle_deg)
+        self.tilt_angle.setEnabled(tilt.enabled)
+        self.emergency_check.setChecked(emergency.enabled)
+        self.emergency_name.setText(emergency.contact_name)
+        self.emergency_phone.setText(emergency.phone)
+        self.emergency_message.setText(emergency.message)
+        self.emergency_hold.setValue(emergency.hold_ms // 1000)
+        self._assist_status()
+
     def _feedback_changed(self) -> None:
         self.break_minutes.setEnabled(self.breaks_check.isChecked())
         if self._loading or self.profile is None:
@@ -545,6 +652,7 @@ class GesturePanel(QTabWidget):
             self._pointer_labels()
             self._load_keyboard()
             self._load_feedback()
+            self._load_assist()
             self._load_apps()
         finally:
             self._loading = False

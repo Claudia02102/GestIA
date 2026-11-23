@@ -40,6 +40,9 @@ class FaceFeatures:
     mouth_open: float
     brow_raise: float
     smile: float
+    # P3-64: inclinación lateral de la cabeza (radianes, 0 = derecha). No se calibra ni mueve
+    # el cursor; solo la usa el gesto de inclinar la cabeza.
+    roll: float = 0.0
 
     def metric(self, name: str) -> float:
         return float(getattr(self, name))
@@ -85,4 +88,13 @@ def extract_features(landmarks: Sequence[Point], aspect: float) -> FaceFeatures 
         ),
         brow_raise=ratio(brow, interocular),
         smile=ratio(dist(MOUTH_CORNER_RIGHT, MOUTH_CORNER_LEFT), dist(CHEEK_RIGHT, CHEEK_LEFT)),
+        roll=roll_angle(point(EYE_OUTER_RIGHT), point(EYE_OUTER_LEFT)),
     )
+
+
+def roll_angle(right_eye: tuple[float, float], left_eye: tuple[float, float]) -> float:
+    """Ángulo de la línea entre los ojos respecto de la horizontal, en (-π/2, π/2]."""
+    dx, dy = left_eye[0] - right_eye[0], left_eye[1] - right_eye[1]
+    if dx < 0:  # imagen espejada: el ojo izquierdo queda a la izquierda
+        dx, dy = -dx, -dy
+    return math.atan2(dy, dx) if abs(dx) + abs(dy) > 1e-9 else 0.0

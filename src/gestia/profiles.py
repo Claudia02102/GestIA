@@ -19,6 +19,7 @@ from typing import Any
 from gestia.app_context import normalize_app_name
 from gestia.calibration import Calibration
 from gestia.control import PointerSettings
+from gestia.emergency import EmergencySettings
 from gestia.feedback import FeedbackSettings
 from gestia.gestures import (
     DEFAULT_ACTIONS,
@@ -30,11 +31,12 @@ from gestia.gestures import (
     default_gesture_settings,
     selection_gestures,
 )
+from gestia.head_tilt import TiltSettings
 from gestia.keyboard import KeyboardSettings
 from gestia.theme import AppearanceSettings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 INDEX_FILE = "index.json"
 EXPORT_FORMAT = "gestia-profile"
 EXPORT_VERSION = 1
@@ -60,6 +62,10 @@ class Profile:
     feedback: FeedbackSettings = field(default_factory=FeedbackSettings)
     # Modo claro u oscuro: preferencia personal, «Restaurar valores» no la cambia.
     appearance: AppearanceSettings = field(default_factory=AppearanceSettings)
+    # P3-64: inclinar la cabeza abre y cierra las acciones rápidas.
+    tilt: TiltSettings = field(default_factory=TiltSettings)
+    # P3-66: contacto y mensaje de auxilio (WhatsApp).
+    emergency: EmergencySettings = field(default_factory=EmergencySettings)
     # P3-26: el tutorial se ofrece solo la primera vez tras calibrar.
     tutorial_done: bool = False
     created_at: str = field(default_factory=_now)
@@ -86,8 +92,8 @@ class Profile:
     def restore_defaults(self) -> None:
         """P3-18: gestos, sensibilidad, mapeo, puntero, teclado y avisos vuelven a su valor inicial.
 
-        Se conservan el nombre, la calibración, las frases frecuentes y las palabras aprendidas:
-        son datos de la persona, no ajustes que puedan dejar el control inservible.
+        Se conservan el nombre, la calibración, las frases frecuentes, las palabras aprendidas y
+        el contacto de auxilio: son datos de la persona, no ajustes que dejen el control inservible.
         """
         self.gestures = default_gesture_settings()
         self.actions = dict(DEFAULT_ACTIONS)
@@ -96,6 +102,7 @@ class Profile:
         defaults = KeyboardSettings()
         self.keyboard.layout, self.keyboard.key_size = defaults.layout, defaults.key_size
         self.feedback = FeedbackSettings()
+        self.tilt = TiltSettings()
 
     def actions_for(self, app: str | None) -> dict[GestureId, Action]:
         """Mapeo que rige en ``app``: el suyo propio o, si no tiene, el general."""
@@ -139,6 +146,8 @@ class Profile:
             "keyboard": self.keyboard.to_dict(),
             "feedback": self.feedback.to_dict(),
             "appearance": self.appearance.to_dict(),
+            "tilt": self.tilt.to_dict(),
+            "emergency": self.emergency.to_dict(),
             "onboarding": {"tutorial_done": self.tutorial_done},
         }
 
@@ -171,6 +180,9 @@ class Profile:
             # Los perfiles anteriores al Sprint 6 no tienen esta sección.
             feedback = FeedbackSettings.from_dict(raw.get("feedback", {}))
             appearance = AppearanceSettings.from_dict(raw.get("appearance", {}))
+            # Los perfiles anteriores al Sprint 8 no tienen estas secciones.
+            tilt = TiltSettings.from_dict(raw.get("tilt", {}))
+            emergency = EmergencySettings.from_dict(raw.get("emergency", {}))
             # Los perfiles anteriores al Sprint 7 no tienen esta sección.
             onboarding = raw.get("onboarding", {})
             tutorial_done = onboarding.get("tutorial_done", False)
@@ -187,6 +199,8 @@ class Profile:
                 keyboard=keyboard,
                 feedback=feedback,
                 appearance=appearance,
+                tilt=tilt,
+                emergency=emergency,
                 tutorial_done=tutorial_done,
                 created_at=str(raw.get("created_at", _now())),
                 updated_at=str(raw.get("updated_at", _now())),

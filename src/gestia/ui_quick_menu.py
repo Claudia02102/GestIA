@@ -33,6 +33,7 @@ WINDOW_ACTIONS = (
 APP_ACTIONS = (
     QuickAction.OPEN_EXPLORER,
     QuickAction.OPEN_BROWSER,
+    QuickAction.OPEN_YOUTUBE,
     QuickAction.OPEN_NOTEPAD,
     QuickAction.OPEN_CALCULATOR,
 )

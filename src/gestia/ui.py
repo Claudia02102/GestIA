@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -37,6 +38,17 @@ from gestia.control import (
     apply_speed,
 )
 from gestia.domain import DisplayPacket, TrackingState
+from gestia.emergency import (
+    ConfirmOutcome,
+    EmergencyConfirmation,
+    EmergencyTrigger,
+    MessengerBackend,
+    SendResult,
+    WindowsMessenger,
+    normalize_phone,
+    open_chat,
+    press_send,
+)
 from gestia.feedback import (
     BreakTimer,
     Feedback,
@@ -54,12 +66,14 @@ from gestia.gestures import (
     positional_gesture_forming,
     resume_hint,
 )
+from gestia.head_tilt import HeadTiltDetector
 from gestia.keyboard import PynputKeyboardBackend
 from gestia.persistence import MetricsWriter
 from gestia.profiles import Profile, ProfileStore
 from gestia.quick_actions import PynputSystemBackend
 from gestia.tutorial import TutorialSession, build_lessons, practice_lessons
 from gestia.ui_calibration import CalibrationDialog
+from gestia.ui_emergency import EmergencyWindow
 from gestia.ui_keyboard import KeyboardWindow
 from gestia.ui_profile import GesturePanel
 from gestia.ui_quick_menu import QuickMenuWindow
@@ -78,6 +92,18 @@ LOGGER = logging.getLogger(__name__)
 BREAK_TICK_MS = 1000
 PAUSE_HOTKEY = "<ctrl>+<alt>+p"
 ACTIVE_APP_POLL_MS = 1000
+# P3-66: tras abrir el chat, espera a que WhatsApp esté en primer plano para pulsar Enter.
+EMERGENCY_TICK_MS = 250
+SEND_DELAY_MS = 4000
+SEND_RETRY_MS = 1500
+SEND_ATTEMPTS = 4
+RESULT_VISIBLE_MS = 8000
+
+
+def _now_ms() -> int:
+    return int(time.monotonic() * 1000)
+
+
 # Cada modo usa un color de la paleta (``theme.Palette``), válido en modo claro y oscuro.
 MODE_TEXT = {
     ControlMode.DISABLED: ("Cursor: control desactivado", "text_muted"),
@@ -161,6 +187,20 @@ class MainWindow(QMainWindow):
         self.break_timer = BreakTimer(self.profile.feedback)
         self.speaking = False
         self.action_app: str | None = None
+        # P3-64: inclinar la cabeza abre y cierra las acciones rápidas.
+        self.tilt = HeadTiltDetector(self.profile.tilt)
+        # P3-66: gesto de auxilio con confirmación.
+        self.emergency_trigger = EmergencyTrigger()
+        self.emergency: EmergencyConfirmation | None = None
+        self.emergency_test = False
+        self.emergency_window: EmergencyWindow | None = None
+        self.messenger: MessengerBackend | None = None
+        self.emergency_timer = QTimer(self)
+        self.emergency_timer.setInterval(EMERGENCY_TICK_MS)
+        self.emergency_timer.timeout.connect(self._tick_emergency)
+        self.emergency_close_timer = QTimer(self)
+        self.emergency_close_timer.setSingleShot(True)
+        self.emergency_close_timer.timeout.connect(self._hide_emergency)
         self.hotkeys = HotkeyBridge()
         self.hotkeys.triggered.connect(self.toggle_pause)
         self.setWindowTitle("GestIA — seguimiento facial")
@@ -348,6 +388,7 @@ class MainWindow(QMainWindow):
         self.panel = GesturePanel()
         self.panel.changed.connect(self._profile_changed)
         self.panel.reminder_test_requested.connect(self.show_break_reminder)
+        self.panel.emergency_test_requested.connect(lambda: self.start_emergency(test=True))
         right.addWidget(self.panel, 1)
         self.setCentralWidget(central)
 
@@ -992,7 +1033,8 @@ class MainWindow(QMainWindow):
             )
         os_events = []
         paused = self.controller is not None and self.controller.paused
-        for event in packet.gestures.events:
+        events = self._special_gestures(packet, tracking, paused)
+        for event in events:
             event = self._event_for_active_app(event)
             self.panel.log_event(event)
             if paused and not acts_while_paused(event.action):
@@ -1009,7 +1051,7 @@ class MainWindow(QMainWindow):
             else:
                 os_events.append(event)
         if self.controller is not None:
-            hold = positional_gesture_forming(
+            hold = self.tilt.forming or positional_gesture_forming(
                 packet.gestures.activations,
                 self.profile.gestures,
                 self.profile.actions_for(self.action_app),
@@ -1023,6 +1065,170 @@ class MainWindow(QMainWindow):
                 self._pause_changed()
             self._show_control(status)
         self._feed_recenter(packet)
+
+    # --- Inclinar la cabeza (P3-64) y gesto de auxilio (P3-66) --------------------------------
+
+    def _special_gestures(
+        self, packet: DisplayPacket, tracking: bool, paused: bool
+    ) -> list[GestureEvent]:
+        """Gestos que actúan antes que el mapeo; devuelve los eventos que siguen su curso."""
+        events = list(packet.gestures.events)
+        if self.emergency is not None:
+            # Confirmando el auxilio: los gestos solo sirven para confirmar, no hacen clic.
+            outcome = self.emergency.feed(events, _now_ms())
+            if outcome is not ConfirmOutcome.WAITING:
+                self._finish_emergency(outcome)
+            self.tilt.reset()
+            return []
+        # El auxilio funciona incluso en pausa: es una emergencia.
+        events, fired = self.emergency_trigger.update(
+            packet.gestures.activations,
+            events,
+            self.profile.gestures,
+            self.profile.emergency,
+            packet.result.timestamp_ms,
+        )
+        if fired:
+            self.start_emergency()
+            return []
+        if not tracking or packet.features is None or paused:
+            self.tilt.reset()
+            return events
+        self.tilt.settings = self.profile.tilt
+        if self.tilt.update(packet.features.roll, packet.result.timestamp_ms):
+            self.quick_menu_button.toggle()
+            self.status_indicator.flash("Acciones rápidas")
+            self.feedback.play(Sound.GESTURE)
+            self.panel.log_message("Cabeza inclinada: acciones rápidas.")
+        # Mientras la cabeza está inclinada, un ojo parece cerrado: los gestos esperan.
+        return [] if self.tilt.forming else events
+
+    def _emergency_contact(self) -> str:
+        settings = self.profile.emergency
+        phone = normalize_phone(settings.phone)
+        if settings.contact_name:
+            return settings.contact_name
+        return f"+{phone}" if phone else "su contacto de emergencia"
+
+    def _ensure_emergency_window(self) -> EmergencyWindow:
+        if self.emergency_window is None:
+            self.emergency_window = EmergencyWindow()
+            self.emergency_window.confirm_clicked.connect(self._emergency_confirm_clicked)
+            self.emergency_window.cancel_clicked.connect(self._emergency_cancel_clicked)
+        return self.emergency_window
+
+    def start_emergency(self, test: bool = False) -> None:
+        if self.emergency is not None:
+            return
+        self.emergency = EmergencyConfirmation(_now_ms())
+        self.emergency_test = test
+        self.emergency_close_timer.stop()
+        window = self._ensure_emergency_window()
+        window.ask(self._emergency_contact(), test)
+        window.set_seconds(self.emergency.seconds_left(_now_ms()))
+        self.emergency_timer.start()
+        self.feedback.play(Sound.REMINDER)
+        self.panel.log_message("Gesto de auxilio: esperando confirmación." + (" (prueba)" * test))
+
+    @Slot()
+    def _tick_emergency(self) -> None:
+        if self.emergency is None:
+            self.emergency_timer.stop()
+            return
+        now = _now_ms()
+        outcome = self.emergency.feed([], now)
+        if outcome is ConfirmOutcome.WAITING:
+            self._ensure_emergency_window().set_seconds(self.emergency.seconds_left(now))
+        else:
+            self._finish_emergency(outcome)
+
+    @Slot()
+    def _emergency_confirm_clicked(self) -> None:
+        if self.emergency is not None:
+            self.emergency.confirm()
+            self._finish_emergency(ConfirmOutcome.CONFIRMED)
+
+    @Slot()
+    def _emergency_cancel_clicked(self) -> None:
+        if self.emergency is None:
+            self._hide_emergency()
+            return
+        self.emergency.cancel()
+        self._finish_emergency(ConfirmOutcome.CANCELLED)
+
+    def _finish_emergency(self, outcome: ConfirmOutcome) -> None:
+        self.emergency = None
+        self.emergency_timer.stop()
+        self.emergency_trigger.reset()
+        window = self._ensure_emergency_window()
+        if outcome is ConfirmOutcome.CONFIRMED and self.emergency_test:
+            window.inform(
+                "Prueba correcta",
+                "Así se confirma. En una emergencia se abriría WhatsApp y se enviaría el mensaje.",
+            )
+            self.panel.log_message("Auxilio (prueba): confirmado, no se envió nada.")
+        elif outcome is ConfirmOutcome.CONFIRMED:
+            self._send_emergency()
+            return
+        else:
+            reason = "se acabó el tiempo" if outcome is ConfirmOutcome.TIMED_OUT else "cancelado"
+            window.inform("Auxilio cancelado", f"No se envió nada ({reason}).")
+            self.panel.log_message(f"Auxilio cancelado: {reason}.")
+        self.emergency_close_timer.start(RESULT_VISIBLE_MS // 2)
+
+    def _send_emergency(self) -> None:
+        window = self._ensure_emergency_window()
+        if self.messenger is None and sys.platform == "win32":
+            self.messenger = WindowsMessenger()
+        result = (
+            SendResult.FAILED
+            if self.messenger is None
+            else open_chat(self.messenger, self.profile.emergency)
+        )
+        contact = self._emergency_contact()
+        if result is SendResult.OPENED_APP:
+            window.inform("Abriendo WhatsApp…", f"Se enviará el mensaje de auxilio a {contact}.")
+            self.panel.log_message(f"Auxilio: chat de WhatsApp abierto con {contact}.")
+            QTimer.singleShot(SEND_DELAY_MS, lambda: self._press_send(1))
+            return
+        if result is SendResult.OPENED_WEB:
+            window.inform(
+                "WhatsApp Web abierto",
+                f"El mensaje para {contact} está escrito: pulse «Enviar» en el navegador.",
+            )
+            self.panel.log_message("Auxilio: sin WhatsApp Desktop, se abrió WhatsApp Web.")
+        else:
+            window.inform(
+                "No se pudo abrir WhatsApp",
+                "Revise el número en Ajustes → Atajos y auxilio e instale WhatsApp Desktop.",
+            )
+            self.panel.log_message("Auxilio: no se pudo abrir WhatsApp.")
+        self.emergency_close_timer.start(RESULT_VISIBLE_MS * 2)
+
+    def _press_send(self, attempt: int) -> None:
+        window = self._ensure_emergency_window()
+        if self.messenger is not None and press_send(self.messenger):
+            window.inform(
+                "Mensaje enviado", f"Se envió el mensaje de auxilio a {self._emergency_contact()}."
+            )
+            self.panel.log_message("Auxilio: mensaje enviado.")
+            self.feedback.play(Sound.GESTURE)
+            self.emergency_close_timer.start(RESULT_VISIBLE_MS)
+        elif attempt < SEND_ATTEMPTS:
+            QTimer.singleShot(SEND_RETRY_MS, lambda: self._press_send(attempt + 1))
+        else:
+            window.inform(
+                "Falta pulsar Enter",
+                "El chat de WhatsApp está abierto con el mensaje escrito: pulse Enter para "
+                "enviarlo.",
+            )
+            self.panel.log_message("Auxilio: WhatsApp no quedó en primer plano para enviar.")
+            self.emergency_close_timer.start(RESULT_VISIBLE_MS * 2)
+
+    @Slot()
+    def _hide_emergency(self) -> None:
+        if self.emergency is None and self.emergency_window is not None:
+            self.emergency_window.hide()
 
     def _raw_pointer(self, packet: DisplayPacket) -> tuple[float, float] | None:
         calibration = self.profile.calibration
@@ -1137,6 +1343,8 @@ class MainWindow(QMainWindow):
             self.keyboard.close()
         if self.quick_menu is not None:
             self.quick_menu.close()
+        if self.emergency_window is not None:
+            self.emergency_window.close()
         self.pause_indicator.close()
         self.status_indicator.close()
         self.break_reminder.close()

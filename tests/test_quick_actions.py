@@ -59,3 +59,11 @@ def test_every_action_has_a_label_and_a_single_way_to_run() -> None:
 
 def test_only_closing_a_window_asks_for_confirmation() -> None:
     assert frozenset({QuickAction.CLOSE_WINDOW}) == NEEDS_CONFIRMATION
+
+
+def test_youtube_opens_in_the_default_browser() -> None:
+    """P3-65: un botón abre YouTube sin escribir la dirección."""
+    system = FakeSystem()
+    run_quick_action(QuickAction.OPEN_YOUTUBE, system)
+    assert system.calls == [("launch", "https://www.youtube.com")]
+    assert QUICK_ACTION_TEXT[QuickAction.OPEN_YOUTUBE] == "YouTube"
