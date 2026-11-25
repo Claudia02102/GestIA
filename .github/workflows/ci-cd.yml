@@ -79,30 +79,43 @@ jobs:
           python -m pip install -e ".[dev]"
 
       # Sin cámara ni modelo descargado: las pruebas marcadas «camara» o «modelo» se excluyen.
-      - name: Pytest
-        run: python -m pytest -m "not camara and not modelo" --junitxml=reporte-pruebas.xml
+      # Con cobertura (P3-67): falla si baja del mínimo de pyproject.toml (fail_under).
+      - name: Pytest con cobertura
+        run: >-
+          python -m pytest -m "not camara and not modelo" --junitxml=reporte-pruebas.xml
+          --cov --cov-report=term --cov-report=xml:cobertura.xml --cov-report=html:cobertura-html
 
-      - name: Resumen de pruebas
+      - name: Resumen de pruebas y cobertura
         if: always()
         shell: pwsh
         run: |
           if (-not (Test-Path reporte-pruebas.xml)) { exit 0 }
           $suite = ([xml](Get-Content reporte-pruebas.xml)).testsuites.testsuite
           $passed = [int]$suite.tests - [int]$suite.failures - [int]$suite.errors - [int]$suite.skipped
+          $lineas = "-"; $ramas = "-"
+          if (Test-Path cobertura.xml) {
+            $cov = ([xml](Get-Content cobertura.xml)).coverage
+            $lineas = "{0:N1} %" -f ([double]$cov.'line-rate' * 100)
+            $ramas = "{0:N1} %" -f ([double]$cov.'branch-rate' * 100)
+          }
           @(
             "### Pruebas automatizadas (Python ${{ matrix.python }})",
             "",
-            "| Pasaron | Fallaron | Errores | Omitidas | Tiempo |",
-            "| --- | --- | --- | --- | --- |",
-            "| $passed | $($suite.failures) | $($suite.errors) | $($suite.skipped) | $([math]::Round([double]$suite.time, 1)) s |"
+            "| Pasaron | Fallaron | Errores | Omitidas | Tiempo | Cobertura de líneas | Cobertura de ramas |",
+            "| --- | --- | --- | --- | --- | --- | --- |",
+            "| $passed | $($suite.failures) | $($suite.errors) | $($suite.skipped) | $([math]::Round([double]$suite.time, 1)) s | $lineas | $ramas |"
           ) | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY
 
-      - name: Reporte de pruebas
+      # Descargable desde la ejecución en Actions: abrir cobertura-html/index.html.
+      - name: Reporte de pruebas y cobertura
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: reporte-pruebas-py${{ matrix.python }}
-          path: reporte-pruebas.xml
+          path: |
+            reporte-pruebas.xml
+            cobertura.xml
+            cobertura-html/
           if-no-files-found: ignore
 
   dependencias:

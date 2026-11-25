@@ -61,6 +61,8 @@ El Sprint 8 añade cuenta y licencia, y tres funciones de accesibilidad:
 | P3-64 Inclinar la cabeza → acciones rápidas | Inclinar la cabeza hacia un hombro (18° por defecto) y mantenerla medio segundo abre el menú; el mismo gesto lo cierra. Mientras la cabeza está inclinada el cursor se fija y los demás gestos esperan (evita guiños falsos). Se ajusta en **Atajos y auxilio**. |
 | P3-65 YouTube | Botón **YouTube** en las acciones rápidas: abre youtube.com en el navegador predeterminado. |
 | P3-66 Gesto de auxilio | Con un contacto configurado en **Atajos y auxilio**, mantener las cejas levantadas 3 s muestra una confirmación grande: abrir la boca o pulsar **Sí, enviar** abre WhatsApp Desktop en el chat del contacto y envía el mensaje de auxilio (sin WhatsApp Desktop, abre WhatsApp Web con el mensaje listo). Si no se confirma, se cancela sola a los 10 s. Funciona también en pausa. Soltar las cejas antes de 3 s recentra como siempre. No hace llamadas. |
+| P3-27 Privacidad y uso sin conexión | La imagen de la cámara se procesa en memoria y nunca se guarda ni se envía. Solo la licencia se conecta a internet (correo, contraseña y un identificador cifrado del equipo); el modelo viene en el instalador. Las pruebas de `tests/test_privacidad.py` hacen fallar el CI si algún módulo guarda fotos o video, se conecta a internet o envía otros datos. Límites: la primera activación y la validación cada 30 días necesitan internet. |
+| P3-67 Pipeline CI/CD por etapas | Un solo workflow en 4 etapas (lint y SAST, pruebas con cobertura, seguridad e instalador). El instalador solo se compila si todo lo anterior pasó. |
 
 ## Instalar GestIA (personas usuarias)
 
@@ -299,6 +301,7 @@ landmarks ni información de identidad.
 ruff check .
 ruff format --check .
 pytest
+pytest --cov   # con reporte de cobertura (mínimo 70 %)
 ```
 
 La [matriz manual](docs/MATRIZ_PRUEBAS_WEBCAM.md) explica cómo probar luz frontal, luz tenue,
@@ -329,7 +332,8 @@ tag lo publica en GitHub Releases (sección «Crear el instalador»). Los contro
 | Control | Herramienta | Qué bloquea |
 |---|---|---|
 | Estilo y formato | `ruff check .`, `ruff format --check .` | Errores de estilo o código sin formatear |
-| Pruebas | `pytest -m "not camara and not modelo"` | Cualquier prueba fallida |
+| Pruebas y cobertura (P3-67) | `pytest -m "not camara and not modelo" --cov` | Cualquier prueba fallida o cobertura menor al 70 % (`fail_under` en `pyproject.toml`). El resumen de cada ejecución muestra la cobertura y el reporte HTML queda como artefacto |
+| Privacidad (P3-27) | `tests/test_privacidad.py` | Código que guarde imágenes o video, conexiones a internet fuera de `license.py` o datos enviados que no sean correo, contraseña o equipo |
 | Código inseguro (SAST, P3-59) | Reglas `S` de ruff (equivalentes a Bandit) | Cualquier hallazgo; las excepciones van por línea con `# noqa: Sxxx` y su motivo |
 | Dependencias (P3-56) | `pip-audit` en Windows con Python 3.12 | Cualquier vulnerabilidad conocida no documentada |
 | Secretos (P3-57) | `gitleaks` sobre todo el historial (en Ubuntu) | Cualquier clave, token o contraseña |

@@ -11,4 +11,7 @@ config.json
 *.egg-info/
 data/profiles/
 reporte-pruebas.xml
+cobertura.xml
+cobertura-html/
+.coverage
 requisitos-auditados.txt
