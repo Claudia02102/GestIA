@@ -248,9 +248,11 @@ Los perfiles creados en el Sprint 2 se cargan sin problema, pero «Fruncir los l
 
 ### Crear el instalador (P3-24)
 
-El workflow `.github/workflows/instalador.yml` lo hace en GitHub (Windows, Python 3.12): pruebas,
-descarga del modelo, ejecutable con PyInstaller (`packaging/gestia.spec`) e instalador con Inno
-Setup (`packaging/installer.iss`). Para publicar una versión:
+La etapa **4. CD** del workflow [CI/CD GestIA](.github/workflows/ci-cd.yml) lo hace en GitHub
+(Windows, Python 3.12) solo si pasaron las pruebas y los controles de seguridad: descarga del
+modelo, ejecutable con PyInstaller (`packaging/gestia.spec`) e instalador con Inno Setup
+(`packaging/installer.iss`). Cada push a `main` deja el instalador como artefacto de la
+ejecución. Para publicar una versión:
 
 1. Actualice `version` en `pyproject.toml` (por ejemplo `0.7.0`) y únalo a `main`.
 2. Cree y suba el tag con la misma versión:
@@ -263,8 +265,8 @@ Setup (`packaging/installer.iss`). Para publicar una versión:
 3. Al terminar el workflow, la Release `v0.7.0` tendrá `GestIA-Setup.exe` y el botón de la
    landing descargará esa versión (siempre apunta a `releases/latest`).
 
-Para probar sin publicar: *Actions → Instalador → Run workflow* deja el instalador como
-artefacto. En local (Windows, Python 3.12 y [Inno Setup 6](https://jrsoftware.org/isinfo.php)):
+Para probar una rama sin publicar: *Actions → CI/CD GestIA → Run workflow*, elegir la rama, y
+descargar el instalador de los artefactos de esa ejecución. En local (Windows, Python 3.12 y [Inno Setup 6](https://jrsoftware.org/isinfo.php)):
 
 ```powershell
 python -m pip install . pyinstaller==6.11.1
@@ -310,18 +312,27 @@ reales: las pruebas simuladas no demuestran FPS ni robustez física. Consulte ta
 [informe del Sprint 4](docs/INFORME_SPRINT_4.md) y la
 [matriz de aceptación del Sprint 4](docs/MATRIZ_PRUEBAS_SPRINT_4.md).
 
-## Integración continua y seguridad
+## Integración y entrega continuas (CI/CD) y seguridad
 
-Cada pull request y cada push a `main` ejecutan el workflow [CI](.github/workflows/ci.yml) en
-Windows con Python 3.11 y 3.12 (P3-55):
+Cada pull request, cada push a `main` y cada tag `vX.Y.Z` ejecutan el workflow
+[CI/CD GestIA](.github/workflows/ci-cd.yml) por etapas; cada una corre solo si la anterior pasó:
+
+```
+1. Lint y SAST ──► 2. Pruebas (Python 3.11 y 3.12) ──────┐
+               ├─► 3. Seguridad: dependencias (pip-audit) ┼─► 4. CD: instalador de Windows
+               └─► 3. Seguridad: secretos (gitleaks) ─────┘
+```
+
+En los pull requests la etapa 4 se omite. En `main` deja el instalador como artefacto y con un
+tag lo publica en GitHub Releases (sección «Crear el instalador»). Los controles:
 
 | Control | Herramienta | Qué bloquea |
 |---|---|---|
 | Estilo y formato | `ruff check .`, `ruff format --check .` | Errores de estilo o código sin formatear |
 | Pruebas | `pytest -m "not camara and not modelo"` | Cualquier prueba fallida |
 | Código inseguro (SAST, P3-59) | Reglas `S` de ruff (equivalentes a Bandit) | Cualquier hallazgo; las excepciones van por línea con `# noqa: Sxxx` y su motivo |
-| Dependencias (P3-56) | `pip-audit` (solo Python 3.12) | Cualquier vulnerabilidad conocida no documentada |
-| Secretos (P3-57) | `gitleaks` sobre todo el historial (trabajo aparte en Ubuntu) | Cualquier clave, token o contraseña |
+| Dependencias (P3-56) | `pip-audit` en Windows con Python 3.12 | Cualquier vulnerabilidad conocida no documentada |
+| Secretos (P3-57) | `gitleaks` sobre todo el historial (en Ubuntu) | Cualquier clave, token o contraseña |
 
 Las pruebas que necesiten la cámara o el modelo descargado se marcan con
 `@pytest.mark.camara` o `@pytest.mark.modelo` y el CI las excluye.
