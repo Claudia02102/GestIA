@@ -61,6 +61,8 @@ El Sprint 8 añade cuenta y licencia, y tres funciones de accesibilidad:
 | P3-64 Inclinar la cabeza → acciones rápidas | Inclinar la cabeza hacia un hombro (18° por defecto) y mantenerla medio segundo abre el menú; el mismo gesto lo cierra. Mientras la cabeza está inclinada el cursor se fija y los demás gestos esperan (evita guiños falsos). Se ajusta en **Atajos y auxilio**. |
 | P3-65 YouTube | Botón **YouTube** en las acciones rápidas: abre youtube.com en el navegador predeterminado. |
 | P3-66 Gesto de auxilio | Con un contacto configurado en **Atajos y auxilio**, mantener las cejas levantadas 3 s muestra una confirmación grande: abrir la boca o pulsar **Sí, enviar** abre WhatsApp Desktop en el chat del contacto y envía el mensaje de auxilio (sin WhatsApp Desktop, abre WhatsApp Web con el mensaje listo). Si no se confirma, se cancela sola a los 10 s. Funciona también en pausa. Soltar las cejas antes de 3 s recentra como siempre. No hace llamadas. |
+| P3-27 Privacidad y uso sin conexión | La imagen de la cámara se procesa en memoria y nunca se guarda ni se envía. Solo la licencia se conecta a internet (correo, contraseña y un identificador cifrado del equipo); el modelo viene en el instalador. Las pruebas de `tests/test_privacidad.py` hacen fallar el CI si algún módulo guarda fotos o video, se conecta a internet o envía otros datos. Límites: la primera activación y la validación cada 30 días necesitan internet. |
+| P3-67 Pipeline CI/CD por etapas | Un solo workflow en 4 etapas (lint y SAST, pruebas con cobertura, seguridad e instalador). El instalador solo se compila si todo lo anterior pasó. |
 
 ## Instalar GestIA (personas usuarias)
 
@@ -248,9 +250,11 @@ Los perfiles creados en el Sprint 2 se cargan sin problema, pero «Fruncir los l
 
 ### Crear el instalador (P3-24)
 
-El workflow `.github/workflows/instalador.yml` lo hace en GitHub (Windows, Python 3.12): pruebas,
-descarga del modelo, ejecutable con PyInstaller (`packaging/gestia.spec`) e instalador con Inno
-Setup (`packaging/installer.iss`). Para publicar una versión:
+La etapa **4. CD** del workflow [CI/CD GestIA](.github/workflows/ci-cd.yml) lo hace en GitHub
+(Windows, Python 3.12) solo si pasaron las pruebas y los controles de seguridad: descarga del
+modelo, ejecutable con PyInstaller (`packaging/gestia.spec`) e instalador con Inno Setup
+(`packaging/installer.iss`). Cada push a `main` deja el instalador como artefacto de la
+ejecución. Para publicar una versión:
 
 1. Actualice `version` en `pyproject.toml` (por ejemplo `0.7.0`) y únalo a `main`.
 2. Cree y suba el tag con la misma versión:
@@ -263,8 +267,8 @@ Setup (`packaging/installer.iss`). Para publicar una versión:
 3. Al terminar el workflow, la Release `v0.7.0` tendrá `GestIA-Setup.exe` y el botón de la
    landing descargará esa versión (siempre apunta a `releases/latest`).
 
-Para probar sin publicar: *Actions → Instalador → Run workflow* deja el instalador como
-artefacto. En local (Windows, Python 3.12 y [Inno Setup 6](https://jrsoftware.org/isinfo.php)):
+Para probar una rama sin publicar: *Actions → CI/CD GestIA → Run workflow*, elegir la rama, y
+descargar el instalador de los artefactos de esa ejecución. En local (Windows, Python 3.12 y [Inno Setup 6](https://jrsoftware.org/isinfo.php)):
 
 ```powershell
 python -m pip install . pyinstaller==6.11.1
@@ -297,6 +301,7 @@ landmarks ni información de identidad.
 ruff check .
 ruff format --check .
 pytest
+pytest --cov   # con reporte de cobertura (mínimo 70 %)
 ```
 
 La [matriz manual](docs/MATRIZ_PRUEBAS_WEBCAM.md) explica cómo probar luz frontal, luz tenue,
@@ -310,18 +315,28 @@ reales: las pruebas simuladas no demuestran FPS ni robustez física. Consulte ta
 [informe del Sprint 4](docs/INFORME_SPRINT_4.md) y la
 [matriz de aceptación del Sprint 4](docs/MATRIZ_PRUEBAS_SPRINT_4.md).
 
-## Integración continua y seguridad
+## Integración y entrega continuas (CI/CD) y seguridad
 
-Cada pull request y cada push a `main` ejecutan el workflow [CI](.github/workflows/ci.yml) en
-Windows con Python 3.11 y 3.12 (P3-55):
+Cada pull request, cada push a `main` y cada tag `vX.Y.Z` ejecutan el workflow
+[CI/CD GestIA](.github/workflows/ci-cd.yml) por etapas; cada una corre solo si la anterior pasó:
+
+```
+1. Lint y SAST ──► 2. Pruebas (Python 3.11 y 3.12) ──────┐
+               ├─► 3. Seguridad: dependencias (pip-audit) ┼─► 4. CD: instalador de Windows
+               └─► 3. Seguridad: secretos (gitleaks) ─────┘
+```
+
+En los pull requests la etapa 4 se omite. En `main` deja el instalador como artefacto y con un
+tag lo publica en GitHub Releases (sección «Crear el instalador»). Los controles:
 
 | Control | Herramienta | Qué bloquea |
 |---|---|---|
 | Estilo y formato | `ruff check .`, `ruff format --check .` | Errores de estilo o código sin formatear |
-| Pruebas | `pytest -m "not camara and not modelo"` | Cualquier prueba fallida |
+| Pruebas y cobertura (P3-67) | `pytest -m "not camara and not modelo" --cov` | Cualquier prueba fallida o cobertura menor al 70 % (`fail_under` en `pyproject.toml`). El resumen de cada ejecución muestra la cobertura y el reporte HTML queda como artefacto |
+| Privacidad (P3-27) | `tests/test_privacidad.py` | Código que guarde imágenes o video, conexiones a internet fuera de `license.py` o datos enviados que no sean correo, contraseña o equipo |
 | Código inseguro (SAST, P3-59) | Reglas `S` de ruff (equivalentes a Bandit) | Cualquier hallazgo; las excepciones van por línea con `# noqa: Sxxx` y su motivo |
-| Dependencias (P3-56) | `pip-audit` (solo Python 3.12) | Cualquier vulnerabilidad conocida no documentada |
-| Secretos (P3-57) | `gitleaks` sobre todo el historial (trabajo aparte en Ubuntu) | Cualquier clave, token o contraseña |
+| Dependencias (P3-56) | `pip-audit` en Windows con Python 3.12 | Cualquier vulnerabilidad conocida no documentada |
+| Secretos (P3-57) | `gitleaks` sobre todo el historial (en Ubuntu) | Cualquier clave, token o contraseña |
 
 Las pruebas que necesiten la cámara o el modelo descargado se marcan con
 `@pytest.mark.camara` o `@pytest.mark.modelo` y el CI las excluye.

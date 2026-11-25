@@ -16,7 +16,7 @@ dependencies = [
   "pynput==1.8.1",
 ]
 [project.optional-dependencies]
-dev = ["pre-commit==4.7.0", "pytest==9.0.3", "ruff==0.9.10"]
+dev = ["pre-commit==4.7.0", "pytest==9.0.3", "pytest-cov==7.1.0", "ruff==0.9.10"]
 [project.scripts]
 gestia = "gestia.app:main"
 [tool.setuptools.packages.find]
@@ -32,6 +32,13 @@ markers = [
   "camara: usa la cámara web real",
   "modelo: usa el modelo de MediaPipe descargado (models/face_landmarker.task)",
 ]
+# Cobertura (P3-67): qué parte del código de la app ejecutan las pruebas del CI.
+[tool.coverage.run]
+source = ["gestia"]
+branch = true
+[tool.coverage.report]
+show_missing = true
+fail_under = 70
 [tool.ruff]
 line-length = 100
 target-version = "py311"
