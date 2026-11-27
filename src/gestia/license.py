@@ -182,6 +182,10 @@ class SupabaseClient:
         )
         return self._session(payload)
 
+    def rpc(self, function: str, body: dict[str, Any]) -> Any:
+        """Función pública de la base con la clave publicable (P3-30: métricas y comentarios)."""
+        return self._post(f"/rest/v1/rpc/{function}", body)
+
     def activate_device(self, access_token: str, device_hash: str, label: str) -> dict[str, Any]:
         payload = self._post(
             "/rest/v1/rpc/activate_device",

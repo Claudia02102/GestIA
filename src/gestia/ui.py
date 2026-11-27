@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import threading
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -67,6 +68,7 @@ from gestia.gestures import (
     resume_hint,
 )
 from gestia.head_tilt import HeadTiltDetector
+from gestia.impact import ImpactService
 from gestia.keyboard import PynputKeyboardBackend
 from gestia.persistence import MetricsWriter
 from gestia.profiles import Profile, ProfileStore
@@ -74,6 +76,7 @@ from gestia.quick_actions import PynputSystemBackend
 from gestia.tutorial import TutorialSession, build_lessons, practice_lessons
 from gestia.ui_calibration import CalibrationDialog
 from gestia.ui_emergency import EmergencyWindow
+from gestia.ui_impact import FeedbackDialog, PrivacyDialog
 from gestia.ui_keyboard import KeyboardWindow
 from gestia.ui_profile import GesturePanel
 from gestia.ui_quick_menu import QuickMenuWindow
@@ -122,6 +125,37 @@ STATE_COLOR = {
 }
 
 
+IMPACT_SYNC_MS = 30 * 60 * 1000  # P3-30: reintento de envíos pendientes
+
+
+class ImpactSync(QObject):
+    """P3-30: envía métricas y comentarios en segundo plano; nunca bloquea la interfaz."""
+
+    done = Signal(int, int)  # enviados, pendientes
+
+    def __init__(self, service: ImpactService) -> None:
+        super().__init__()
+        self.service = service
+        self._running = False
+
+    def start(self) -> None:
+        if self._running:
+            return
+        self._running = True
+        threading.Thread(target=self._run, name="gestia-impacto", daemon=True).start()
+
+    def _run(self) -> None:
+        sent, pending = 0, len(self.service.outbox.pending())
+        try:
+            self.service.queue_finished_days()
+            sent, pending = self.service.flush()
+        except Exception:  # noqa: BLE001 - un fallo de red nunca debe tumbar la app
+            LOGGER.warning("No se pudieron enviar las métricas o comentarios", exc_info=True)
+        finally:
+            self._running = False
+        self.done.emit(sent, pending)
+
+
 class HotkeyBridge(QObject):
     """Atajo global de pausa; pynput llama desde su hilo y la señal llega al de la interfaz."""
 
@@ -166,6 +200,12 @@ class MainWindow(QMainWindow):
         self.autostart = Autostart.for_system(project_root)
         self.autostart.refresh()
         self.tutorial: TutorialDialog | None = None
+        # P3-30: métricas anónimas (solo con consentimiento) y comentarios.
+        self.impact = ImpactService(project_root)
+        self.impact_sync = ImpactSync(self.impact)
+        self.impact_sync.done.connect(self._impact_synced)
+        self.active_seconds = 0
+        self.consent_dialog: PrivacyDialog | None = None
         self.worker: PipelineWorker | None = None
         self.thread: QThread | None = None
         self.metrics = MetricsWriter(resolve_from_project(config.metrics.path, project_root))
@@ -220,6 +260,14 @@ class MainWindow(QMainWindow):
         if autostart:
             # Arranque con Windows: la cámara se abre sola para usar el equipo sin ayuda.
             QTimer.singleShot(800, self.start_tracking)
+        elif not self.impact.asked:
+            # P3-30: se pregunta una vez; mientras no se responda, no se registra nada.
+            QTimer.singleShot(1500, self.ask_metrics_consent)
+        self.impact_timer = QTimer(self)
+        self.impact_timer.setInterval(IMPACT_SYNC_MS)
+        self.impact_timer.timeout.connect(self.impact_sync.start)
+        self.impact_timer.start()
+        QTimer.singleShot(5000, self.impact_sync.start)
 
     def _build_ui(self) -> None:
         central = QWidget()
@@ -437,7 +485,60 @@ class MainWindow(QMainWindow):
         bar.addSpacing(16)
         bar.addWidget(dark_label)
         bar.addWidget(self.dark_switch)
+        bar.addSpacing(16)
+        privacy = QPushButton("Privacidad")
+        privacy.setToolTip("Métricas de uso anónimas: qué se envía y tu permiso")
+        privacy.clicked.connect(self.open_privacy)
+        feedback = QPushButton("Enviar comentario")
+        feedback.setToolTip("Cuéntanos una sugerencia, un problema o tu experiencia")
+        feedback.clicked.connect(self.open_feedback)
+        bar.addWidget(privacy)
+        bar.addWidget(feedback)
         return header
+
+    # --- Métricas de impacto y comentarios (P3-30) -------------------------------------------
+
+    @Slot()
+    def ask_metrics_consent(self) -> None:
+        """Pregunta una sola vez, sin bloquear: la cámara y los gestos siguen funcionando."""
+        if self.impact.asked or self.wizard is not None or self.tutorial is not None:
+            return
+        self.consent_dialog = PrivacyDialog(self.impact, first_time=True, parent=self)
+        self.consent_dialog.finished.connect(self._consent_answered)
+        self.consent_dialog.open()
+
+    @Slot()
+    def _consent_answered(self) -> None:
+        if not self.impact.asked:
+            # Cerrar la ventana sin elegir cuenta como «no»: no se vuelve a preguntar.
+            self.impact.set_consent(False)
+        self.panel.log_message(
+            "Métricas anónimas activadas."
+            if self.impact.enabled
+            else "Métricas desactivadas: no se registra nada."
+        )
+        self.consent_dialog.deleteLater()
+        self.consent_dialog = None
+
+    @Slot()
+    def open_privacy(self) -> None:
+        PrivacyDialog(self.impact, parent=self).exec()
+
+    @Slot()
+    def open_feedback(self) -> None:
+        dialog = FeedbackDialog(self.impact, self)
+        if dialog.exec() and dialog.item_id is not None:
+            self.panel.log_message("Comentario guardado; enviándolo…")
+            self.impact_sync.start()
+
+    @Slot(int, int)
+    def _impact_synced(self, sent: int, pending: int) -> None:
+        if sent:
+            self.panel.log_message(f"Enviado: {sent} (métricas o comentarios). ¡Gracias!")
+        if pending:
+            self.panel.log_message(
+                f"Sin conexión: {pending} envío(s) esperan y se reintentarán solos."
+            )
 
     @Slot(bool)
     def _autostart_toggled(self, enabled: bool) -> None:
@@ -614,6 +715,10 @@ class MainWindow(QMainWindow):
         active = (
             self.thread is not None and self.tracking_state is TrackingState.TRACKING and not paused
         )
+        if active:
+            self.active_seconds += 1
+            # Solo cuenta con consentimiento; se guarda en disco una vez por minuto.
+            self.impact.tracker.add_active_seconds(1, save=self.active_seconds % 60 == 0)
         if self.break_timer.tick(time.monotonic(), active):
             self.show_break_reminder()
 
@@ -661,6 +766,7 @@ class MainWindow(QMainWindow):
             self.keyboard.learned.connect(self._word_learned)
             self.keyboard.closed.connect(lambda: self.keyboard_button.setChecked(False))
         self.keyboard.show()
+        self.impact.tracker.record_feature("teclado")
         self.keyboard_button.setText("Ocultar teclado")
 
     @Slot(str)
@@ -840,6 +946,7 @@ class MainWindow(QMainWindow):
             self.quick_menu = QuickMenuWindow(backend)
             self.quick_menu.closed.connect(lambda: self.quick_menu_button.setChecked(False))
         self.quick_menu.show()
+        self.impact.tracker.record_feature("acciones_rapidas")
 
     # --- Calibración y recentrado ---------------------------------------------------------
 
@@ -879,6 +986,7 @@ class MainWindow(QMainWindow):
         self._save_profile()
         self.panel.set_profile(self.profile)
         self.panel.log_message("Calibración guardada en el perfil.")
+        self.impact.tracker.record_feature("calibracion")
         if not self.profile.tutorial_done and self.profile.selection_gestures():
             # P3-26: la primera vez, el tutorial empieza solo al cerrar el asistente.
             QTimer.singleShot(600, lambda: self.open_tutorial(practice=False))
@@ -921,12 +1029,15 @@ class MainWindow(QMainWindow):
     def _tutorial_completed(self, completed: bool) -> None:
         if completed:
             self.panel.log_message("Tutorial completado.")
+            self.impact.tracker.record_feature("tutorial_completado")
 
     @Slot()
     def _tutorial_closed(self) -> None:
         if self.tutorial is None:
             return
         practice = self.tutorial.session.practice
+        if practice:
+            self.impact.tracker.record_feature("practica")
         self.tutorial.deleteLater()
         self.tutorial = None
         if not practice and not self.profile.tutorial_done:
@@ -983,6 +1094,7 @@ class MainWindow(QMainWindow):
         self.recenter_button.setEnabled(True)
         self.tutorial_button.setEnabled(True)
         self.practice_button.setEnabled(True)
+        self.impact.tracker.record_session()
         self.worker = PipelineWorker(self.config, self.project_root)
         self.worker.apply_profile(self.profile)
         self._create_controller()
@@ -1041,6 +1153,7 @@ class MainWindow(QMainWindow):
                 # P3-19: en pausa ningún gesto actúa, salvo el de reanudar.
                 self.panel.log_message("Ignorado: el control está en pausa.")
                 continue
+            self.impact.tracker.record_action(event.action)
             if event.action is not Action.PAUSE:
                 # La pausa ya tiene su propio aviso visual y sonoro (P3-19).
                 self._gesture_feedback(event)
@@ -1292,6 +1405,9 @@ class MainWindow(QMainWindow):
 
     @Slot(object)
     def _session_finished(self, summary: dict) -> None:
+        if not self.impact.enabled:
+            # P3-30: sin consentimiento no se registran métricas, tampoco las técnicas locales.
+            return
         try:
             self.metrics.append(summary)
         except OSError as exc:
@@ -1349,4 +1465,5 @@ class MainWindow(QMainWindow):
         self.status_indicator.close()
         self.break_reminder.close()
         self.break_timer_tick.stop()
+        self.impact.tracker.flush()
         event.accept()

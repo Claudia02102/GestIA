@@ -288,8 +288,47 @@ ejemplo, la apertura de la boca en reposo y en el gesto pleno), no imágenes ni 
 `data/profiles/index.json` recuerda el último perfil usado.
 
 Las métricas y datos técnicos del entorno (SO, arquitectura, CPU lógica, RAM, Python y sesión
-gráfica) se guardan como JSONL en `data/metrics.jsonl`. No se guardan fotografías, video,
-landmarks ni información de identidad.
+gráfica) se guardan como JSONL en `data/metrics.jsonl` **solo si la persona aceptó las métricas**
+(P3-30). No se guardan fotografías, video, landmarks ni información de identidad.
+
+## Métricas de impacto y comentarios (P3-30)
+
+**Consentimiento.** La primera vez que se abre GestIA (no en el arranque automático con Windows)
+pregunta si se comparten métricas de uso anónimas; cerrar la ventana cuenta como «no». Se cambia
+cuando se quiera en **Privacidad**, en la cabecera, que también muestra **exactamente** el JSON
+que se enviaría («Ver exactamente qué se envía»). Mientras no haya un «sí», **no se registra
+nada**: ni contadores, ni `data/metrics.jsonl`, ni envíos. Retirar el permiso borra lo pendiente y
+el identificador.
+
+**Qué se envía**, una vez por día terminado (claves fijas, comprobadas en las pruebas):
+
+| Clave | Contenido |
+|---|---|
+| `install_id` | Número aleatorio de esta instalación (UUID v4). No se deriva del equipo ni de la cuenta. |
+| `day`, `app_version`, `os` | Día del reporte, versión de GestIA y «Windows 10» u «11» |
+| `sessions`, `active_minutes` | Veces que se inició la cámara y minutos con rostro detectado y sin pausa |
+| `actions` | Cuántas veces se usó cada acción (`left_click`, `scroll`…) |
+| `features` | Cuántas veces se usaron teclado, acciones rápidas, calibración, tutorial y práctica |
+
+Nunca se envían imágenes, video, landmarks, nombres, correos, perfiles, frases, palabras
+escritas, aplicaciones abiertas ni rutas.
+
+**Comentarios.** **Enviar comentario**, en la cabecera, pide el tipo (sugerencia, problema o
+«me ayudó»), el mensaje (hasta 1000 caracteres) y, si se quiere, un correo para responder. No
+depende del consentimiento de métricas: es un envío explícito.
+
+**Envío.** Métricas y comentarios esperan en `buzon.json` (carpeta de datos) y se envían en
+segundo plano al abrir la app, cada 30 minutos y después de cada comentario, a las funciones
+`submit_usage_report` y `submit_feedback` de Supabase (el mismo proyecto de la licencia, con la
+clave publicable; ver `supabase/migrations/20261126200000_metricas_impacto.sql` en la landing).
+Sin internet, o si el servidor no responde, se reintenta solo; un envío que el servidor rechaza
+por datos no válidos se descarta para no bloquear el resto. Los contadores del día están en
+`uso_pendiente.json` y la decisión en `privacidad.json`.
+
+**Para las organizaciones aliadas.** En el panel de Supabase, la vista `impacto_diario` resume
+por día las instalaciones activas, sesiones, minutos de uso y cuántas completaron el tutorial o
+usaron el teclado; los comentarios están en la tabla `feedback`. Desde la API pública no se
+pueden leer.
 
 ## Verificación
 
@@ -394,6 +433,8 @@ límpielo del historial.
 - `paths.py`: carpetas en desarrollo e instalada (programa y datos de la persona).
 - `autostart.py`: inicio automático con Windows (clave Run del usuario).
 - `tutorial.py`, `ui_tutorial.py`: lecciones del tutorial y modo de práctica, y su ventana.
+- `impact.py`, `ui_impact.py`: consentimiento, métricas anónimas, comentarios y su buzón de
+  envíos (P3-30), y sus ventanas.
 - `packaging/`: ejecutable (PyInstaller), instalador (Inno Setup) e ícono.
 - `ui_calibration.py`, `ui_profile.py`, `ui_widgets.py`, `ui_keyboard.py`,
   `ui_quick_menu.py`: asistente, panel de gestos, puntero virtual, ventana del teclado y menú de
